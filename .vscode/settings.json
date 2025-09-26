@@ -1,0 +1,35 @@
+{
+    "nodejs-testing.extensions": [
+        {
+            "extensions": [
+                "mjs",
+                "cjs",
+                "js",
+            ],
+            "parameters": []
+        },
+        {
+            "extensions": [
+                "mts",
+                "cts",
+                "ts"
+            ],
+            "parameters": [
+                "--import",
+                "tsx",
+            ]
+        }
+    ],
+    "nodejs-testing.testSpecifiers": [
+        {
+            "import": "node:test",
+            "name": [
+                "default",
+                "it",
+                "test",
+                "describe",
+                "suite"
+            ]
+        }
+    ]
+}

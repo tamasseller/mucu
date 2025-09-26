@@ -1,0 +1,31 @@
+{
+  "name": "mucu",
+  "version": "1.0.0",
+  "description": "Minimal Utility Code Underlayer",
+  "main": "dist/compiler.js",
+  "scripts": {
+    "build": "tsc",
+    "types": "dist/compiler.d.ts",
+    "test": "node --import tsx --experimental-test-coverage --test-coverage-exclude 'test/*' --test-reporter=spec --test-reporter=lcov --test-reporter-destination=stdout --test-reporter-destination=lcov.info --test test/*.test.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tamasseller/mucu.git"
+  },
+  "keywords": [
+    "compiler",
+    "mcu",
+    "utility"
+  ],
+  "author": "Tamás Seller",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/tamasseller/mucu/issues"
+  },
+  "homepage": "https://github.com/tamasseller/mucu#readme",
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}

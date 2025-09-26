@@ -1,0 +1,14 @@
+{
+    "include": ["src/**/*"],
+    "compilerOptions": {
+        "outDir": "dist",
+        "lib": [
+            "esnext"
+        ],
+        "target": "es2024",
+        "allowSyntheticDefaultImports": true,
+        "moduleResolution": "nodenext",
+        "module": "nodenext",
+        "declaration": true
+    }
+}
