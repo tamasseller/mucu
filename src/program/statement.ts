@@ -5,17 +5,6 @@ export abstract class Statement {
     abstract get referencedVars(): Variable[]
 }
 
-export class Special extends Statement 
-{
-    constructor(readonly param: any) {
-        super()
-    }
-
-    get referencedVars(): Variable[] {
-        return []
-    }
-}
-
 export class Block extends Statement 
 {
     readonly stmts: Statement[]
@@ -42,7 +31,6 @@ export class Assignment extends Statement
 export class Store extends Statement
 {
     constructor(
-        
         readonly width: LoadStoreWidth,
         readonly address: Expression,
         readonly value: Expression
