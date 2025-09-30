@@ -1,8 +1,8 @@
 import assert from "assert"
 import { Expression, Variable } from "./expression"
-import { Block, Branch, Jump, JumpKind, Loop, Statement } from "./statement"
+import { Block, Branch, Call, Jump, JumpKind, Loop, Statement } from "./statement"
 
-interface Builder
+export interface Builder
 {
     args: Iterable<Variable>
     add(stmt: Statement): void
@@ -12,11 +12,25 @@ interface Builder
     break(): void
     continue(): void
     return(...retVals: Expression[])
+    call(p: Procedure, ...args: (Expression | number)[] ): Iterable<Variable>
 }
 
 interface VariableReferenceValidator
 {
     validateVariableReference(variable: Variable): boolean 
+}
+
+function* autoArray(builder: () => Variable, max?: number): Generator<Variable, void, unknown>
+{
+    while(true)
+    {
+        if(max !== undefined)
+        {
+            assert(0 < max--)
+        }
+
+        yield builder()
+    }
 }
 
 class ConcreteBuilder implements Builder, VariableReferenceValidator
@@ -30,13 +44,16 @@ class ConcreteBuilder implements Builder, VariableReferenceValidator
     stmts: Statement[] = []
     readonly declaredVars = new Set<Variable>()
 
-    validateVariableReference(variable: Variable): boolean {
+    validateVariableReference(variable: Variable): boolean 
+    {
         return this.declaredVars.has(variable) 
             || this.parent.validateVariableReference(variable)
     } 
 
-    add(stmt: Statement): void {
-        assert(stmt.referencedVars.every(x => this.validateVariableReference(x)))
+    add(stmt: Statement): void 
+    {
+        const refd = stmt.referencedVars
+        assert(refd.every(x => this.validateVariableReference(x)))
         this.stmts.push(stmt);
     }
 
@@ -59,11 +76,13 @@ class ConcreteBuilder implements Builder, VariableReferenceValidator
         return new Block(...b.stmts)
     }
 
-    loop(condition: Expression, body?: Statement | ((b: Builder) => any)): void {
+    loop(condition: Expression, body?: Statement | ((b: Builder) => any)): void 
+    {
         this.add(new Loop(condition, this.toStatement(body)));
     }
 
-    branch(condition: Expression, then?: Statement | ((b: Builder) => any), owise?: Statement | ((b: Builder) => any)): void {
+    branch(condition: Expression, then?: Statement | ((b: Builder) => any), owise?: Statement | ((b: Builder) => any)): void 
+    {
         return this.add(new Branch(
             condition, 
             this.toStatement(then), 
@@ -71,15 +90,17 @@ class ConcreteBuilder implements Builder, VariableReferenceValidator
         ));
     }
 
-    break(): void {
+    break(): void 
+    {
         this.add(new Jump(JumpKind.Break));
     }
 
-    continue(): void {
+    continue(): void 
+    {
         this.add(new Jump(JumpKind.Continue));
     }
 
-    return (...retVals: Expression[]): void 
+    return (...retVals: (Expression | number)[]): void 
     {
         if(this.rets.length == 0)
         {
@@ -95,15 +116,22 @@ class ConcreteBuilder implements Builder, VariableReferenceValidator
 
         this.add(new Jump(JumpKind.Return))
     }
-}
 
-function* autoArray(f: Function, arr: Variable[]): Generator<Variable, void, unknown>
-{
-    while(true)
+    call(p: Procedure, ...args: (Expression | number)[] ): Iterable<Variable>
     {
-        const v = new Variable()
-        arr.push(v)
-        yield v
+        const rets: Variable[] = []
+
+        this.add(new Call(p, args.map(x => Expression.exprize(x)), rets));
+
+        return autoArray(() => 
+        {
+            const v = new Variable()
+
+            this.declaredVars.add(v)
+            rets.push(v)
+
+            return v
+        }, p.args.length)
     }
 }
 
@@ -120,7 +148,14 @@ export default class Procedure
         const args: Variable[] = []
         const rets: Variable[][] = []
 
-        const b = new ConcreteBuilder(autoArray(s, args), rets, {validateVariableReference: v => args.includes(v)})
+        const autoArgs = autoArray(() => 
+        {
+            const ret = new Variable()
+            args.push(ret)
+            return ret
+        });
+
+        const b = new ConcreteBuilder(autoArgs, rets, {validateVariableReference: v => args.includes(v)})
         s(b)
 
         return new Procedure(args, rets.at(0) ?? [], new Block(...b.stmts))

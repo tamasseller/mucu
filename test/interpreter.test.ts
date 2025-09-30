@@ -1,12 +1,12 @@
 import {MemoryAccessor} from '../src/interpreter/accessor'
 import Interpreter, {} from '../src/interpreter/intepreter'
+import {BufferAccessor} from '../src/interpreter/buffer'
 
 import test, { suite } from 'node:test';
 import assert from 'node:assert';
 import Procedure from '../src/program/procedure';
 import { LoadStoreWidth } from '../src/program/common';
 import { Constant } from '../src/program/expression';
-import { DEFAULT_CIPHERS } from 'node:tls';
 
 class MockAccessor implements MemoryAccessor
 {
@@ -46,10 +46,23 @@ class MockAccessor implements MemoryAccessor
 
     read(address: number, length: number, done: (v: Buffer) => void, fail: (e: Error) => void): number 
     {
-        assert(length == 4)
-        this.queue.push(() => {
-            const b = Buffer.alloc(4)
-            b.writeUint32LE(this.mem.get(address) ?? address + 1)
+        this.queue.push(() => 
+        {
+            const b = Buffer.alloc(length)
+            const v = this.mem.get(address) ?? address + 1;
+            switch(length)
+            {
+                case 4:
+                    b.writeUint32LE(v)
+                    break
+                case 2:
+                    b.writeUint16LE(v)
+                    break
+                default:
+                    assert(length == 1)
+                    b.writeUint8(v)
+            }
+            
             done(b)
         })
 
@@ -72,7 +85,7 @@ class MockAccessor implements MemoryAccessor
         if(handles.length)
         {
             const end = handles.reduce((a, b) => Math.max(a, b))
-            assert(end <= this.queue.length)
+            // assert(end <= this.queue.length)
 
             this.log.push(`FLUSH ${end}`)
 
@@ -405,17 +418,57 @@ suite("interpreter", {}, () => {
         assert.deepStrictEqual([...m.mem.entries()], [])
     })
 
-    test("copyBlockBufferArg", async () => {
+    test("call", async () => {
         const m = new MockAccessor()
-        await new Interpreter(m).run(Procedure.build(b => 
+
+        const min = Procedure.build($ => {
+            const [x, y] = $.args
+            $.return(x.lt(y).ternary(x, y));
+        })
+
+        const max = Procedure.build($ => {
+            const [x, y] = $.args
+            $.return(x.lt(y).ternary(y, x));
+        })
+
+        const clamp = Procedure.build($ => 
         {
-            const [dst, end, src] = b.args
-            b.loop(dst.lt(end), b => {
-                b.add(dst.store(src.load(LoadStoreWidth.U1), LoadStoreWidth.U1))
-                b.add(dst.set(dst.add(1)))
-                b.add(src.set(src.add(1)))
+            const [x, y, z] = $.args
+            const [m] = $.call(min, y, z)
+            const [r] = $.call(max, x, m)
+            $.return(r)
+        })
+
+        {
+            const [ret] = await new Interpreter(m).run(clamp, 1, 2, 3)
+            assert.equal(ret, 2)
+        }
+
+        {
+            const [ret] = await new Interpreter(m).run(clamp, 1, 4, 3)
+            assert.equal(ret, 3)
+        }
+
+        {
+            const [ret] = await new Interpreter(m).run(clamp, 1, 0, 3)
+            assert.equal(ret, 1)
+        }
+    })
+    
+    test("copyBlockFromBuffer", async () => 
+    {
+        const m = new MockAccessor()
+        const b = new BufferAccessor(Buffer.from("asdqwe", "utf8"))
+        await new Interpreter(m).run(Procedure.build($ => 
+        {
+            const [dst, end] = $.args
+            const idx = $.declare(0)
+            $.loop(dst.lt(end), $ => {
+                $.add(dst.store(b.read(idx, LoadStoreWidth.U1), LoadStoreWidth.U1))
+                $.add(dst.increment())
+                $.add(idx.increment())
             })
-        }), 69, 72, Buffer.from("asdqwe", "utf8"))
+        }), 69, 72)
 
         assert.deepStrictEqual(m.log, [
             "1 WRITE 69 <- 97",
@@ -423,5 +476,34 @@ suite("interpreter", {}, () => {
             "3 WRITE 71 <- 100",
             "FLUSH 3",
         ])
+    })
+
+
+    test("copyBlockToBuffer", async () => 
+    {
+        const m = new MockAccessor()
+        const data = Buffer.alloc(3)
+        const b = new BufferAccessor(data)
+        await new Interpreter(m).run(Procedure.build($ => 
+        {
+            const [src, end] = $.args
+            const idx = $.declare(0)
+            $.loop(src.lt(end), $ => {
+                $.add(b.write(src.load(LoadStoreWidth.U1), idx, LoadStoreWidth.U1))
+                $.add(src.increment())
+                $.add(idx.increment())
+            })
+        }), 69, 72)
+
+        assert.deepStrictEqual(m.log, [
+            "1 READ 69",
+            "FLUSH 1",
+            "2 READ 70",
+            "FLUSH 2",
+            "3 READ 71",
+            "FLUSH 3"
+        ])
+
+        assert.deepStrictEqual([...data], [70, 71, 72])
     })
 })

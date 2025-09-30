@@ -86,9 +86,11 @@ export abstract class Expression
     }
 }
 
+let varIdx = 0
+
 export class Variable extends Expression 
 {   
-    constructor() {
+    constructor(readonly idx = varIdx++) {
         super()
     }
     

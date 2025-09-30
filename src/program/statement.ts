@@ -1,5 +1,7 @@
+import assert from "assert"
 import { LoadStoreWidth } from "./common"
 import { Expression, Variable } from "./expression"
+import Procedure from "./procedure"
 
 export abstract class Statement {
     abstract get referencedVars(): Variable[]
@@ -47,7 +49,6 @@ export class Store extends Statement
 export class Branch extends Statement
 {
     constructor(
-        
         readonly condition: Expression,
         readonly then: Statement,
         readonly otherwise?: Statement
@@ -75,7 +76,6 @@ export class Jump extends Statement
 export class Loop extends Statement
 {
     constructor(
-        
         readonly preCondition: Expression,
         readonly body: Statement
     ) {
@@ -83,4 +83,23 @@ export class Loop extends Statement
     }
 
     get referencedVars(): Variable[] { return this.preCondition.referencedVars }
+}
+
+export class Call extends Statement
+{
+    constructor(
+        readonly procedure: Procedure,
+        readonly args: Expression[],
+        readonly retvals: Variable[]
+    ) {
+        super()
+        assert(procedure.args.length === args.length)
+    }
+
+    get referencedVars(): Variable[] { 
+        return [
+            ...this.args.map(a => a.referencedVars).flat(),
+            ...this.retvals
+        ]
+    }
 }

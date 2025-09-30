@@ -1,14 +1,14 @@
 import assert from "assert";
 
-import MemoryAccessor from "./accessor";
-
-import { Assignment, Block, Branch, Jump, JumpKind, Loop, Statement, Store } from "../program/statement";
-import { Binary, Constant, Expression, Load, Variable } from "../program/expression";
+import { Assignment, Block, Branch, Call, Jump, JumpKind, Loop, Statement, Store } from "../program/statement";
+import { Binary, Constant, Expression, Load, Ternary, Variable } from "../program/expression";
 import { LoadStoreWidth } from "../program/common";
 import { BinaryOperator, evaluteOperator } from "../program/binaryOperator";
 import { Special } from "./special";
 import { Observer } from "./observer";
 import Procedure from "../program/procedure";
+import { MemoryAccessor } from "./accessor";
+import { ReadFromBuffer, WriteToBuffer } from "./buffer";
 
 class EvaluationResult
 {
@@ -129,6 +129,33 @@ class Context
         )
     }
 
+    async walkTernary(e: Ternary): Promise<EvaluationResult | PromiseLike<EvaluationResult>> 
+    {
+        const cond = await this.walkExpression(e.condition);
+
+        this.flush(cond.flushHandles)
+        const ret = (!!(await cond.value)) ? e.then : e.otherwise
+
+        return await this.walkExpression(ret);
+    }
+
+    async walkRead(e: ReadFromBuffer): Promise<EvaluationResult> 
+    {
+        const off = await this.walkExpression(e.offset);
+
+        return {
+            flushHandles: off.flushHandles,
+            value: off.value.then(v => 
+            {
+                switch(e.width) {
+                    case LoadStoreWidth.U1: return e.buffer.readUint8(v)
+                    case LoadStoreWidth.U2: return e.buffer.readUint16LE(v)
+                    case LoadStoreWidth.U4: return e.buffer.readUint32LE(v)
+                }
+            })
+        }
+    }
+
     async walkExpression(e: Expression): Promise<EvaluationResult>
     {
         if(e instanceof Constant)
@@ -143,10 +170,18 @@ class Context
         {
             return this.walkLoad(e)
         }
+        else if(e instanceof Binary)
+        {
+            return this.walkBinary(e)
+        }
+        else if(e instanceof Ternary)
+        {
+            return this.walkTernary(e)
+        }
         else
         {
-            assert(e instanceof Binary)
-            return this.walkBinary(e)
+            assert(e instanceof ReadFromBuffer)
+            return this.walkRead(e)
         }
     }
 
@@ -347,6 +382,45 @@ class Context
         }
     }
 
+    async executeCall(s: Call, observer: Observer): Promise<ExecuteResult> 
+    {
+        observer?.observeCall(s)
+
+        assert(s.args.length == s.procedure.args.length)
+        assert(s.retvals.length <= s.procedure.retvals.length)
+
+        const ctx = new Context(this.accessor);
+
+        const ers = await Promise.all(s.args.map(a => this.walkExpression(a)))
+        s.procedure.args.forEach((v, idx) => ctx.set(v, ers[idx]));
+
+        const fhs = await ctx.run(s.procedure.body, observer);
+
+        s.retvals.forEach((v, idx) => this.set(v, ctx.get(s.procedure.retvals[idx])))
+
+        return {flushHandles: fhs, escape: BlockEscape.Proceed}
+    }
+
+    async executeWrite(s: WriteToBuffer, observer: Observer): Promise<ExecuteResult>
+    {
+        const [val, off] = await Promise.all([
+            this.walkExpression(s.value),
+            this.walkExpression(s.offset)
+        ])
+
+        this.flush([...val.flushHandles, ...off.flushHandles])
+        const [v, o] = await Promise.all([val.value, off.value]);
+
+        switch(s.width) 
+        {
+            case LoadStoreWidth.U1: s.buffer.writeUint8(v, o); break
+            case LoadStoreWidth.U2: s.buffer.writeUint16LE(v, o); break
+            case LoadStoreWidth.U4: s.buffer.writeUint32LE(v, o); break
+        }
+
+        return { flushHandles: [], escape: BlockEscape.Proceed }
+    }
+
     async executeSpecial(s: Special, observer: Observer | undefined): Promise<ExecuteResult>
     {
         observer?.observeSpecial(s)
@@ -383,13 +457,21 @@ class Context
         {
             return this.executeSpecial(s, observer)
         }
-        else
+        else if(s instanceof Jump)
         {
-            assert(s instanceof Jump)
             return this.executeJump(s, observer)
         }
+        else if(s instanceof Call)
+        {
+            return this.executeCall(s, observer)
+        }
+        else 
+        {
+            assert(s instanceof WriteToBuffer)
+            return this.executeWrite(s, observer)
+        }
     }
-
+    
     public async run(root: Block, observer: Observer | undefined): Promise<any[]>
     {
         const result = await this.executeBlock(root, observer);
@@ -400,7 +482,7 @@ class Context
 }
 
 export default class Interpreter
-{
+{   
     readonly accessor: MemoryAccessor
     readonly observerBuilder?: (args: Variable[], retvals: Variable[]) => Observer;
 

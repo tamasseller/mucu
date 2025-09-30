@@ -1,4 +1,4 @@
-import { Assignment, Store, Loop, Branch, Jump } from "../program/statement";
+import { Assignment, Store, Loop, Branch, Jump, Call } from "../program/statement";
 import { Special } from "./special";
 
 export interface Observer
@@ -12,4 +12,5 @@ export interface Observer
     observeWait(addr: number, mask: number, value: number): void
     observeStore(s: Store): void
     observeAssignment(s: Assignment): void
+    observeCall(s: Call): void
 }
