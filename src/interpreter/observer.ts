@@ -13,4 +13,5 @@ export interface Observer
     observeStore(s: Store): void
     observeAssignment(s: Assignment): void
     observeCall(s: Call): void
+    observerDiagnostic(msg: string): void;
 }

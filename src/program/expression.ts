@@ -1,6 +1,6 @@
 import { BinaryOperator } from "./binaryOperator"
 import { LoadStoreWidth } from "./common"
-import { Assignment, Statement, Store } from "./statement"
+import { Assignment, FormattedNumber, Statement, Store, WriteToBuffer } from "./statement"
 
 export abstract class Expression 
 {
@@ -84,12 +84,31 @@ export abstract class Expression
     store(r: Expression | number, w: LoadStoreWidth = LoadStoreWidth.U4): Statement {
         return new Store(w, this, Expression.exprize(r))
     }
+
+    read(w: LoadStoreWidth = LoadStoreWidth.U4): Expression {
+        return new ReadFromBuffer(w, this)
+    }
+
+    write(r: Expression | number, w: LoadStoreWidth = LoadStoreWidth.U4): Statement {
+        return new WriteToBuffer(w, this, Expression.exprize(r))
+    }
+
+    hex(w = 0): FormattedNumber {
+        return new FormattedNumber(this, 16, w)
+    }
+
+    dec(w = 0): FormattedNumber {
+        return new FormattedNumber(this, 10, w)
+    }
 }
 
 let varIdx = 0
 
 export class Variable extends Expression 
-{   
+{
+    decimal(): string | import("./statement").FormattedNumber {
+        throw new Error('Method not implemented.')
+    }   
     constructor(readonly idx = varIdx++) {
         super()
     }
@@ -161,3 +180,13 @@ export class Ternary extends Expression
         ...this.otherwise.referencedVars
     ]).keys()]}
 }
+
+export class ReadFromBuffer extends Expression
+{
+    constructor(readonly width: LoadStoreWidth, readonly address: Expression)
+    {
+        super()
+    }
+
+    get referencedVars(): Variable[] { return this.address.referencedVars }
+};

@@ -103,3 +103,33 @@ export class Call extends Statement
         ]
     }
 }
+
+export class WriteToBuffer extends Statement
+{
+    constructor(readonly width: LoadStoreWidth, readonly address: Expression, readonly value: Expression)
+    {
+        super()
+    }
+
+    get referencedVars(): Variable[] { return [...this.address.referencedVars, ...this.value.referencedVars] }
+};
+
+export class FormattedNumber
+{
+    constructor(readonly value: Expression, readonly radix, readonly minWidth) {}
+}
+
+export class Diagnostic extends Statement
+{
+    constructor(readonly content: (FormattedNumber | string)[])
+    {
+        super()
+    }
+
+    get referencedVars(): Variable[] { 
+        return this.content.map(c => c instanceof FormattedNumber 
+            ? c.value.referencedVars 
+            : []
+        ).flat() 
+    }
+};

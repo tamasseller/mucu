@@ -1,6 +1,6 @@
 import assert from "assert"
 import { Expression, Variable } from "./expression"
-import { Block, Branch, Call, Jump, JumpKind, Loop, Statement } from "./statement"
+import { Block, Branch, Call, Diagnostic, FormattedNumber, Jump, JumpKind, Loop, Statement } from "./statement"
 
 export interface Builder
 {
@@ -13,6 +13,7 @@ export interface Builder
     continue(): void
     return(...retVals: Expression[])
     call(p: Procedure, ...args: (Expression | number)[] ): Iterable<Variable>
+    diagnostic(...content: (FormattedNumber | string)[]): unknown
 }
 
 interface VariableReferenceValidator
@@ -132,6 +133,10 @@ class ConcreteBuilder implements Builder, VariableReferenceValidator
 
             return v
         }, p.args.length)
+    }
+
+    diagnostic(...content: (FormattedNumber | string)[]) {
+        this.add(new Diagnostic(content))
     }
 }
 

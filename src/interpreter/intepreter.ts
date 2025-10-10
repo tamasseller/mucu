@@ -1,14 +1,21 @@
 import assert from "assert";
 
-import { Assignment, Block, Branch, Call, Jump, JumpKind, Loop, Statement, Store } from "../program/statement";
-import { Binary, Constant, Expression, Load, Ternary, Variable } from "../program/expression";
-import { LoadStoreWidth } from "../program/common";
+import { Assignment, Block, Branch, Call, Diagnostic, FormattedNumber, Jump, JumpKind, Loop, Statement, Store, WriteToBuffer } from "../program/statement";
+import { Binary, Constant, Expression, Load, ReadFromBuffer, Ternary, Variable } from "../program/expression";
+import { asBytes, LoadStoreWidth } from "../program/common";
 import { BinaryOperator, evaluteOperator } from "../program/binaryOperator";
 import { Special } from "./special";
 import { Observer } from "./observer";
 import Procedure from "../program/procedure";
 import { MemoryAccessor } from "./accessor";
-import { ReadFromBuffer, WriteToBuffer } from "./buffer";
+
+function formatHex(v: number, pad: number): string {
+    return "0x" + ("0".repeat(pad) + v.toString(16)).slice(-pad);
+}
+
+function format32(v: number): string {
+    return formatHex(v, 8)
+}
 
 class EvaluationResult
 {
@@ -30,11 +37,71 @@ interface ExecuteResult
     flushHandles: any[]
 }
 
+class BufferMapping
+{
+    readonly entries: {base: number, buffer: Buffer}[] = []
+    
+    private get nextOffset()
+    {
+        if(this.entries.length === 0) return 0;
+
+        const last = this.entries[this.entries.length - 1]
+        return last.base + last.buffer.length
+    }
+
+    private find(address: number, width: LoadStoreWidth): { base: number; buffer: Buffer; }
+    {
+        const end = address + asBytes(width)
+
+        for(const e of this.entries)
+        {
+            if(e.base <= address && end <= e.base + e.buffer.length)
+            {
+                return e
+            }
+        }
+
+        throw new Error(`No buffer at ${format32(address)} - ${format32(end)}`)
+    }
+
+    add(b: Buffer): number
+    {
+        const off = this.nextOffset
+        this.entries.push({base: off, buffer: b})
+
+        return off;
+    }
+
+    read(address: number, width: LoadStoreWidth): number 
+    {
+        const { base, buffer } = this.find(address, width)
+
+        switch(width)
+        {
+            case LoadStoreWidth.U1: return buffer.readUInt8(address - base)
+            case LoadStoreWidth.U2: return buffer.readUInt16LE(address - base)
+            case LoadStoreWidth.U4: return buffer.readUInt32LE(address - base)
+        }
+    }
+
+    write(address: number, value: number, width: LoadStoreWidth): any 
+    {
+        const { base, buffer } = this.find(address, width)
+
+        switch(width)
+        {
+            case LoadStoreWidth.U1: buffer.writeUInt8(value, address - base); break
+            case LoadStoreWidth.U2: buffer.writeUInt16LE(value, address - base); break
+            case LoadStoreWidth.U4: buffer.writeUInt32LE(value, address - base); break
+        }
+    }
+}
+
 class Context
 {
     readonly variables = new Map<Variable, EvaluationResult>()
 
-    constructor(readonly accessor: MemoryAccessor) {}
+    constructor(readonly accessor: MemoryAccessor, readonly buffers: BufferMapping) {}
 
     private load(address: number, width: LoadStoreWidth): EvaluationResult 
     {
@@ -141,18 +208,11 @@ class Context
 
     async walkRead(e: ReadFromBuffer): Promise<EvaluationResult> 
     {
-        const off = await this.walkExpression(e.offset);
+        const addr = await this.walkExpression(e.address);
 
         return {
-            flushHandles: off.flushHandles,
-            value: off.value.then(v => 
-            {
-                switch(e.width) {
-                    case LoadStoreWidth.U1: return e.buffer.readUint8(v)
-                    case LoadStoreWidth.U2: return e.buffer.readUint16LE(v)
-                    case LoadStoreWidth.U4: return e.buffer.readUint32LE(v)
-                }
-            })
+            flushHandles: addr.flushHandles,
+            value: addr.value.then(v => this.buffers.read(v, e.width))
         }
     }
 
@@ -389,7 +449,7 @@ class Context
         assert(s.args.length == s.procedure.args.length)
         assert(s.retvals.length <= s.procedure.retvals.length)
 
-        const ctx = new Context(this.accessor);
+        const ctx = new Context(this.accessor, this.buffers);
 
         const ers = await Promise.all(s.args.map(a => this.walkExpression(a)))
         s.procedure.args.forEach((v, idx) => ctx.set(v, ers[idx]));
@@ -403,22 +463,41 @@ class Context
 
     async executeWrite(s: WriteToBuffer, observer: Observer): Promise<ExecuteResult>
     {
-        const [val, off] = await Promise.all([
-            this.walkExpression(s.value),
-            this.walkExpression(s.offset)
+        const [addr, val] = await Promise.all([
+            this.walkExpression(s.address),
+            this.walkExpression(s.value)
         ])
 
-        this.flush([...val.flushHandles, ...off.flushHandles])
-        const [v, o] = await Promise.all([val.value, off.value]);
+        this.flush([...addr.flushHandles, ...val.flushHandles])
+        const [a, v] = await Promise.all([addr.value, val.value]);
 
-        switch(s.width) 
-        {
-            case LoadStoreWidth.U1: s.buffer.writeUint8(v, o); break
-            case LoadStoreWidth.U2: s.buffer.writeUint16LE(v, o); break
-            case LoadStoreWidth.U4: s.buffer.writeUint32LE(v, o); break
-        }
+        this.buffers.write(a, v, s.width)
 
         return { flushHandles: [], escape: BlockEscape.Proceed }
+    }
+
+    async executeDiagnostic(s: Diagnostic, observer: Observer): Promise<ExecuteResult> 
+    {
+        const promises = s.content.map(async c => 
+        {
+            if(c instanceof FormattedNumber)
+            {
+                const n = await this.evaluate(c.value)
+                const s = n.toString(c.radix)
+                return c.minWidth < s.length ? s : ("0".repeat(c.minWidth) + s).slice(-c.minWidth)
+            }
+            else
+            {
+                return c
+            }
+        })
+        
+        observer.observerDiagnostic((await Promise.all(promises)).join(""))
+
+        return {
+            escape: BlockEscape.Proceed,
+            flushHandles: []
+        }
     }
 
     async executeSpecial(s: Special, observer: Observer | undefined): Promise<ExecuteResult>
@@ -465,10 +544,14 @@ class Context
         {
             return this.executeCall(s, observer)
         }
+        else if(s instanceof WriteToBuffer)
+        {
+            return this.executeWrite(s, observer)
+        }
         else 
         {
-            assert(s instanceof WriteToBuffer)
-            return this.executeWrite(s, observer)
+            assert(s instanceof Diagnostic)
+            return this.executeDiagnostic(s, observer)
         }
     }
     
@@ -492,15 +575,18 @@ export default class Interpreter
         this.observerBuilder = observerBuilder
     }
 
-    async run(procedure: Procedure, ...args: number[]): Promise<number[]> 
+    async run(procedure: Procedure, ...args: (number | Buffer)[]): Promise<number[]> 
     {
         if(args.length !== procedure.args.length)
         {
             throw new Error(`Runtime error: expected ${procedure.args.length} arguments, got ${args.length}`)
         }
 
-        const ctx = new Context(this.accessor);
-        procedure.args.forEach((v, idx) => ctx.set(v, EvaluationResult.literal(args[idx])));
+        const buffers = new BufferMapping()
+        const mappedArgs = args.map<number>(a => a instanceof Buffer ? buffers.add(a) : a as number)
+
+        const ctx = new Context(this.accessor, buffers);
+        procedure.args.forEach((v, idx) => ctx.set(v, EvaluationResult.literal(mappedArgs[idx])));
 
         const observer = this.observerBuilder?.(procedure.args, procedure.retvals)
 

@@ -1,12 +1,14 @@
 import {MemoryAccessor} from '../src/interpreter/accessor'
 import Interpreter, {} from '../src/interpreter/intepreter'
-import {BufferAccessor} from '../src/interpreter/buffer'
 
 import test, { suite } from 'node:test';
 import assert from 'node:assert';
 import Procedure from '../src/program/procedure';
 import { LoadStoreWidth } from '../src/program/common';
 import { Constant } from '../src/program/expression';
+import { Observer } from '../src/interpreter/observer';
+import { Special } from '../src/interpreter/special';
+import { Jump, Loop, Branch, Store, Assignment, Call } from '../src/program/statement';
 
 class MockAccessor implements MemoryAccessor
 {
@@ -458,17 +460,15 @@ suite("interpreter", {}, () => {
     test("copyBlockFromBuffer", async () => 
     {
         const m = new MockAccessor()
-        const b = new BufferAccessor(Buffer.from("asdqwe", "utf8"))
         await new Interpreter(m).run(Procedure.build($ => 
         {
-            const [dst, end] = $.args
-            const idx = $.declare(0)
+            const [src, dst, end] = $.args
             $.loop(dst.lt(end), $ => {
-                $.add(dst.store(b.read(idx, LoadStoreWidth.U1), LoadStoreWidth.U1))
+                $.add(dst.store(src.read(LoadStoreWidth.U1), LoadStoreWidth.U1))
                 $.add(dst.increment())
-                $.add(idx.increment())
+                $.add(src.increment())
             })
-        }), 69, 72)
+        }), Buffer.from("asdqwe", "utf8"), 69, 72)
 
         assert.deepStrictEqual(m.log, [
             "1 WRITE 69 <- 97",
@@ -478,22 +478,20 @@ suite("interpreter", {}, () => {
         ])
     })
 
-
     test("copyBlockToBuffer", async () => 
     {
         const m = new MockAccessor()
         const data = Buffer.alloc(3)
-        const b = new BufferAccessor(data)
+
         await new Interpreter(m).run(Procedure.build($ => 
         {
-            const [src, end] = $.args
-            const idx = $.declare(0)
+            const [src, dst, end] = $.args
             $.loop(src.lt(end), $ => {
-                $.add(b.write(src.load(LoadStoreWidth.U1), idx, LoadStoreWidth.U1))
+                $.add(dst.write(src.load(LoadStoreWidth.U1), LoadStoreWidth.U1))
                 $.add(src.increment())
-                $.add(idx.increment())
+                $.add(dst.increment())
             })
-        }), 69, 72)
+        }), 69, data, 72)
 
         assert.deepStrictEqual(m.log, [
             "1 READ 69",
@@ -506,4 +504,47 @@ suite("interpreter", {}, () => {
 
         assert.deepStrictEqual([...data], [70, 71, 72])
     })
+})
+
+test("diagnostic", async () => 
+{
+    const m = new MockAccessor()
+    const msgs: string[] = []
+
+    const o: Observer = {
+        observeEntry: (): void => { },
+        observeExit: (): void => { },
+        observeSpecial: (): void => { },
+        observeJump: (s: Jump): void => { },
+        observeLoop: (s: Loop): void => { },
+        observeBranch: (s: Branch, taken: boolean): void => { },
+        observeWait: (addr: number, mask: number, value: number): void => { },
+        observeStore: (s: Store): void => { },
+        observeAssignment: (s: Assignment): void => { },
+        observeCall: (s: Call): void => { },
+        observerDiagnostic: (msg: string): void => {
+            msgs.push(msg)
+        }
+    }
+
+    await new Interpreter(m, () => o).run(Procedure.build($ => 
+    {
+        const i = $.declare(0)
+        $.loop(i.le(5), $ => {
+            const n = i.mul(i)
+            $.diagnostic(n.dec(4), " = 0x", n.hex(2))
+            $.add(i.increment())
+        })
+    }))
+
+    assert.deepStrictEqual(msgs, 
+        [
+            "0000 = 0x00",
+            "0001 = 0x01",
+            "0004 = 0x04",
+            "0009 = 0x09",
+            "0016 = 0x10",
+            "0025 = 0x19"
+        ]
+    )
 })
