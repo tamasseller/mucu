@@ -11,7 +11,7 @@ export interface Builder
     branch(condition: Expression, then?: Statement | ((b: Builder) => any), owise?: Statement | ((b: Builder) => any)): void
     break(): void
     continue(): void
-    return(...retVals: Expression[])
+    return(...retVals: (Expression | number)[])
     call(p: Procedure, ...args: (Expression | number)[] ): Iterable<Variable>
     diagnostic(...content: (FormattedNumber | string)[]): unknown
 }
@@ -132,7 +132,7 @@ class ConcreteBuilder implements Builder, VariableReferenceValidator
             rets.push(v)
 
             return v
-        }, p.args.length)
+        }, p.retvals.length)
     }
 
     diagnostic(...content: (FormattedNumber | string)[]) {
