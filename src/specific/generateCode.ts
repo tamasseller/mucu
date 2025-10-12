@@ -5,6 +5,7 @@ import { LoReg, lr } from "./armv6"
 import { calleeSaved, CoreReg, flagsReg, lowRegs } from "./registers"
 import { Assembler, Label, Uoff27 } from "./assembler"
 import { CmConditional, CmIsn } from "./instructions"
+import { Relocation } from "./linker"
 
 function collectCalleeSaves(bbs: BasicBlock[]): LoReg[] | undefined
 {
@@ -124,7 +125,7 @@ function generateBody(asm: Assembler, bbs: BasicBlock[])
     }
 }
 
-export function generateCode(bbs: BasicBlock[]): Buffer<ArrayBufferLike> 
+export function generateCode(bbs: BasicBlock[]): { code: Buffer; relocs: Relocation[] }
 {
     /*
      * Collect register usage information for pre/postlude generation.

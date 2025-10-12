@@ -10,8 +10,9 @@ import { generateCode } from "./specific/generateCode";
 import { BasicBlock } from "./cfg/basicBlock";
 import { allocateRegisters } from "./generic/registerAllocation";
 import { ProcedurePrinter } from "./printer";
+import { RelocatableObject } from "./specific/linker";
 
-export function compile(ast: Procedure): Buffer
+export function compile(ast: Procedure): RelocatableObject
 {
     /*
      * First convert the AST of the procedure into an inital CFG form where
@@ -93,7 +94,7 @@ export function compile(ast: Procedure): Buffer
         */
         [straightenLoops, "straighten loops"]
     ]) {
-        console.log(`${pass[1]}:\n${ProcedurePrinter.print(cfg)}\n\n`)
+        // console.log(`${pass[1]}:\n${ProcedurePrinter.print(cfg)}\n\n`)
         cfg = (pass[0] as (bb: BasicBlock) => BasicBlock)(cfg)
     }
 
@@ -105,12 +106,20 @@ export function compile(ast: Procedure): Buffer
     /*
      * Straighten all conditionals conservatively given the final block order.
      */
-    const straightenedCfg = straightenConditionals(bbs)
+    straightenConditionals(bbs)
     
     /* 
      * Finally generate the binary.
      */
-    return generateCode(bbs)
+    const {code, relocs} = generateCode(bbs)
+
+    return {
+        symbol: ast,
+        length: code.length,
+        relocations: relocs,
+        alignmentBits: 2,
+        content: code
+    }
 }
 
 // TODO implement procedure calls

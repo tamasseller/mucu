@@ -9,7 +9,7 @@ import assert from "node:assert"
 import { Value } from "../cfg/value"
 import { ProcedurePrinter } from "../printer"
 
-const dumpColoring = true
+const dumpColoring = false
 
 function dotDump(clone: Iterable<AllocationNode>, colors: Map<Value, Value>)
 {

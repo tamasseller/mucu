@@ -10,7 +10,7 @@ test("returnArg", () => {
 	assert.strictEqual(disassemble(compile(Procedure.build(b => {
 		const [a] = b.args
 		b.return(a)
-	}))),
+	})).content!),
 `     bx lr`
 )})
 
@@ -18,7 +18,7 @@ test("branch", () => {
 	assert.strictEqual(disassemble(compile(Procedure.build($ => {
 		const [a] = $.args
 		$.branch(a.sub(3), new Constant(123).store(a.mul(69)))
-	}))),
+	})).content!),
 `     cmp  r0, #3
      beq  l0
      movs r1, #69
@@ -32,7 +32,7 @@ test("min", () => {
 	assert.strictEqual(disassemble(compile(Procedure.build(b => {
 		const [l, m] = b.args
 		b.return(l.lt(m).ternary(l, m))
-	}))),
+	})).content!),
 `     cmp r0, r1
      blo l0
      mov r0, r1
@@ -46,7 +46,7 @@ test("sort", () => {
 			b => b.return(x, y),
 			b => b.return(y, x),
 		)
-	}))),
+	})).content!),
 `     cmp r0, r1
      blo l0
      mov r2, r1
@@ -63,7 +63,7 @@ test("copy", () => {
 			b.add(d.increment())
 			b.add(s.increment())
 		})
-	}))),
+	})).content!),
 `l0:  cmp  r0, r2
      beq  l1
      ldrb r3, [r1]
@@ -110,7 +110,7 @@ test("reality", () => {
 
 		cr.store(cr.load().bitand((~0x420) >>> 0).bitor(0x020)),
 		b.return(ret)
-	}))),
+	})).content!),
 `     push {r4, r5, lr}
      ldr  r4, L0 ; 0x12345678
      ldr  r5, [r4]
@@ -161,7 +161,7 @@ test("logAndSingle", () => {
 	assert.strictEqual(disassemble(compile(Procedure.build($ => {
 		const [a] = $.args
 		$.branch(a.ge(0).logand(a.lt(10)), new Constant(69).store(420))
-	}))),
+	})).content!),
 `     cmp  r0, #0
      blo  l0
      cmp  r0, #10
@@ -186,7 +186,7 @@ test("logAndOrChain", () => {
 			), 
 			new Constant(69).store(420)
 		)
-	}))),
+	})).content!),
 `     cmp  r0, #0
      blo  l1
      cmp  r0, #10
@@ -209,7 +209,7 @@ test("ternaryConditional", () => {
 			a.load().ge(a.gt(123).ternary(456, 789)),
 			new Constant(69).store(420)
 		)
-	}))),
+	})).content!),
 `     ldr  r1, [r0]
      cmp  r0, #123
      bhi  l0

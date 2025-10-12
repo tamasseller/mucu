@@ -155,6 +155,31 @@ export const enum HiRegOp
     JMP = 0b01000111_00000000,
 };
 
+export const enum WideOps
+{
+    DSB = 0b11110_0111011_1111_1_000_1111_0100_1111,
+    DMB = 0b11110_0111011_1111_1_000_1111_0101_1111,
+    ISB = 0b11110_0111011_1111_1_000_1111_0110_1111,
+    MSR = 0b11110_0111000_0000_1_000_1000_00000000,
+    MRS = 0b11110_0111110_1111_1_000_0000_00000000,
+    BL  = 0b11110_0_0000000000_11_0_1_0_00000000000,
+};
+
+export const enum SYSm
+{
+    APSR    = 0b00000_000,
+    IAPSR   = 0b00000_001,
+    EAPSR   = 0b00000_010,
+    XPSR    = 0b00000_011,
+    IPSR    = 0b00000_101,
+    EPSR    = 0b00000_110,
+    IEPSR   = 0b00000_111,
+    MSP     = 0b00001_000,
+    PSP     = 0b00001_001,
+    PRIMASK = 0b00010_000,
+    CONTROL = 0b00010_100
+};
+
 export const fmtReg2 = (op: Reg2Op, dn: number, m: number): number => op | (m << 3) | dn;
 export const fmtReg3 = (op: Reg3Op, dt: number, n: number, m: number): number => op | (m << 6) | (n << 3) | dt;
 export const fmtImm5 = (op: Imm5Op, dt: number, mn: number, imm5: number): number => op | (imm5 << 6) | (mn << 3) | dt;
@@ -169,4 +194,25 @@ export const fmtPushPop = (popNpush: boolean, includeExtra: boolean, regFlags: n
 
 export const lsMia = (loadNstore: boolean, n: number, regFlags: number): number => 
     0b11000_00000000000 | (loadNstore ? (1 << 11) : 0) | (n << 8) | regFlags;
+
+export const fmtMsr = (sys: number, n: number): number => WideOps.MSR | (n << 16) | (sys);
+export const fmtMrs = (d: number, sys: number): number => WideOps.MRS | (d << 8) | (sys);
+
+export const fmtBl = (off: number): number => 
+{
+    // S:I1:I2:imm10:imm11:'0'
+    const imm11 = (off >>> 0) & 0x7ff;
+    const imm10 = (off >>> 11) & 0x3ff;
+    const I1 = (off >>> 21) & 1;
+    const I2 = (off >>> 22) & 1;
+    const S = (off >>> 23) & 1;
+
+    // I1 = NOT(J1 EOR S);  --->   NOT(I1) = J1 EOR S   --->   J1 = NOT(I1) EOR S = I1 EOR S EOR 1
+    // I2 = NOT(J2 EOR S);  --->   NOT(I1) = J1 EOR S   --->   J2 = NOT(I2) EOR S = I2 EOR S EOR 1
+
+    const J1 = I1 ^ S ^ 1;
+    const J2 = I2 ^ S ^ 1;
+
+    return WideOps.BL | (S << 26) | (imm10 << 16) | (J1 << 13) | (J2 << 11) | imm11;
+};
 
