@@ -4,7 +4,6 @@ import * as asm from '../src/specific/assembler';
 import test, { suite } from 'node:test';
 import assert from 'node:assert';
 import Procedure from '../src/program/procedure';
-import { thumbBlReloc } from '../src/specific/linker';
 
 const fromRaw = (...raw: number[]): Buffer => {
     const ret = Buffer.alloc(raw.length * 2)
@@ -27,8 +26,8 @@ suite("asm", {}, () => {
         uut.subs(armv6.r1, armv6.r2, 3);
 
         const ret = uut.assemble();
-        assert.deepEqual(ret.relocs, [])
-        assert.deepEqual(ret.code, fromRaw(
+        assert.deepEqual(ret.relocations, [])
+        assert.deepEqual(ret.content, fromRaw(
             0x1888, // adds	r0, r1, r2
             0x1b63, // subs	r3, r4, r5
             0x1c3e, // adds	r6, r7, #0
@@ -59,8 +58,8 @@ suite("asm", {}, () => {
         uut.revsh(armv6.r2, armv6.r3);
 
         const ret = uut.assemble();
-        assert.deepEqual(ret.relocs, [])
-        assert.deepEqual(ret.code, fromRaw(
+        assert.deepEqual(ret.relocations, [])
+        assert.deepEqual(ret.content, fromRaw(
             0x4008, // ands	r0, r1
             0x4051, // eors	r1, r2
             0x415a, // adcs	r2, r3
@@ -93,8 +92,8 @@ suite("asm", {}, () => {
         uut.asrs(armv6.r5, armv6.r6, 9);
 
         const ret = uut.assemble();
-        assert.deepEqual(ret.relocs, [])
-        assert.deepEqual(ret.code, fromRaw(
+        assert.deepEqual(ret.relocations, [])
+        assert.deepEqual(ret.content, fromRaw(
             0x4088, // lsls	r0, r1
             0x40d1, // lsrs	r1, r2
             0x411a, // asrs	r2, r3
@@ -113,8 +112,8 @@ suite("asm", {}, () => {
         uut.cmp(armv6.r7, 123);
 
         const ret = uut.assemble();
-        assert.deepEqual(ret.relocs, [])
-        assert.deepEqual(ret.code, fromRaw(
+        assert.deepEqual(ret.relocations, [])
+        assert.deepEqual(ret.content, fromRaw(
             0x4288, // cmp	r0, r1
             0x4592, // cmp	r10, r2
             0x4561, // cmp	r1, r12
@@ -141,8 +140,8 @@ suite("asm", {}, () => {
         uut.ldrsh(armv6.r1, armv6.r2, armv6.r3);
 
         const ret = uut.assemble();
-        assert.deepEqual(ret.relocs, [])
-        assert.deepEqual(ret.code, fromRaw(
+        assert.deepEqual(ret.relocations, [])
+        assert.deepEqual(ret.content, fromRaw(
             0x5088,  // str	r0, [r1, r2]
             0x61a3,  // str	r3, [r4, #24]
             0x53f5,  // strh	r5, [r6, r7]
@@ -165,8 +164,8 @@ suite("asm", {}, () => {
         uut.movs(armv6.r5, 234);
 
         const ret = uut.assemble();
-        assert.deepEqual(ret.relocs, [])
-        assert.deepEqual(ret.code, fromRaw(
+        assert.deepEqual(ret.relocations, [])
+        assert.deepEqual(ret.content, fromRaw(
             0x25ea, // movs	r5, #234	@ 0xea
         ));
     })
@@ -180,8 +179,8 @@ suite("asm", {}, () => {
         uut.addSp(armv6.r2, 984);
 
         const ret = uut.assemble();
-        assert.deepEqual(ret.relocs, [])
-        assert.deepEqual(ret.code, fromRaw(
+        assert.deepEqual(ret.relocations, [])
+        assert.deepEqual(ret.content, fromRaw(
             0xb07d, // add	sp, #500	@ 0x1f4
             0xb0bf, // sub	sp, #252	@ 0xfc
             0x9021, // str	r0, [sp, #132]	@ 0x84
@@ -196,8 +195,8 @@ suite("asm", {}, () => {
         uut.addPc(armv6.r1, 352)
 
         const ret = uut.assemble();
-        assert.deepEqual(ret.relocs, [])
-        assert.deepEqual(ret.code, fromRaw(
+        assert.deepEqual(ret.relocations, [])
+        assert.deepEqual(ret.content, fromRaw(
             0x483e, // ldr	r0, [pc, #248]	@ (108 <fillStack+0x108>)
             0xa158, // add	r0, pc, #352	@ (adr r0, 174 <fillStack+0x174>)
         ));        
@@ -216,8 +215,8 @@ suite("asm", {}, () => {
         uut.bx(armv6.r9)
 
         const ret = uut.assemble();
-        assert.deepEqual(ret.relocs, [])
-        assert.deepEqual(ret.code, fromRaw(
+        assert.deepEqual(ret.relocations, [])
+        assert.deepEqual(ret.content, fromRaw(
             0x4408, // add	r0, r1
             0x44da, // add	r10, r11
             0x4611, // mov	r1, r2
@@ -237,8 +236,8 @@ suite("asm", {}, () => {
         uut.popWithPc([armv6.r6, armv6.r3, armv6.r1, armv6.r0])
 
         const ret = uut.assemble();
-        assert.deepEqual(ret.relocs, [])
-        assert.deepEqual(ret.code, fromRaw(
+        assert.deepEqual(ret.relocations, [])
+        assert.deepEqual(ret.content, fromRaw(
             0xb42d, // push	{r0, r2, r3, r5}
             0xb5d2, // push	{r1, r4, r6, r7, r14}
             0xbcb4, // pop	{r2, r4, r5, r7}
@@ -253,8 +252,8 @@ suite("asm", {}, () => {
         uut.ldmia(armv6.r1, [armv6.r3, armv6.r4, armv6.r5, armv6.r6])
 
         const ret = uut.assemble();
-        assert.deepEqual(ret.relocs, [])
-        assert.deepEqual(ret.code, fromRaw(
+        assert.deepEqual(ret.relocations, [])
+        assert.deepEqual(ret.content, fromRaw(
             0xc0ca, // stmia	r0!, {r1, r3, r6, r7}
             0xc978, // ldmia	r1!, {r3, r4, r5, r6}
         ));
@@ -267,8 +266,8 @@ suite("asm", {}, () => {
         uut.bkpt(34);
 
         const ret = uut.assemble();
-        assert.deepEqual(ret.relocs, [])
-        assert.deepEqual(ret.code, fromRaw(
+        assert.deepEqual(ret.relocations, [])
+        assert.deepEqual(ret.content, fromRaw(
             0xde0c, // udf	#12
             0xdf17, // svc	23
             0xbe22, // bkpt	0x0022
@@ -285,8 +284,8 @@ suite("asm", {}, () => {
         uut.sev();
 
         const ret = uut.assemble();
-        assert.deepEqual(ret.relocs, [])
-        assert.deepEqual(ret.code, fromRaw(
+        assert.deepEqual(ret.relocations, [])
+        assert.deepEqual(ret.content, fromRaw(
             0xb662, // cpsie	i
             0xb672, // cpsid	i
             0xbf10, // yield
@@ -316,8 +315,8 @@ suite("asm", {}, () => {
         uut.b(l)
 
         const ret = uut.assemble();
-        assert.deepEqual(ret.relocs, [])
-        assert.deepEqual(ret.code, fromRaw(
+        assert.deepEqual(ret.relocations, [])
+        assert.deepEqual(ret.content, fromRaw(
             0xd0fe, // beq.n	e <l>
             0xd1fd, // bne.n	e <l>
             0xd2fc, // bcs.n	e <l>
@@ -348,8 +347,8 @@ suite("asm", {}, () => {
         uut.bx(armv6.lr)
 
         const ret = uut.assemble();
-        assert.deepEqual(ret.relocs, [])
-        assert.deepEqual(ret.code, fromRaw(
+        assert.deepEqual(ret.relocations, [])
+        assert.deepEqual(ret.content, fromRaw(
             0x4803, // ldr	r0, [pc, #12]	@ (10 <fillStack+0x10>)
             0x4669, // mov	r1, r13
             0x4a03, // ldr	r2, [pc, #12]	@ (14 <fillStack+0x14>)
@@ -378,8 +377,8 @@ suite("asm", {}, () => {
         uut.bx(armv6.lr)
 
         const ret = uut.assemble();
-        assert.deepEqual(ret.relocs, [])
-        assert.deepEqual(ret.code, fromRaw(
+        assert.deepEqual(ret.relocations, [])
+        assert.deepEqual(ret.content, fromRaw(
             0x46c0, // nop			@ (mov r8, r8)
             0x4803, // ldr	r0, [pc, #12]	@ (10 <fillStack+0x10>)
             0x4669, // mov	r1, r13
@@ -414,8 +413,8 @@ suite("asm", {}, () => {
         uut.bx(armv6.lr)
 
         const ret = uut.assemble();
-        assert.deepEqual(ret.relocs, [])
-        assert.deepEqual(ret.code, fromRaw(
+        assert.deepEqual(ret.relocations, [])
+        assert.deepEqual(ret.content, fromRaw(
             0xa004, // add	r0, pc, #16	@ (adr r0, 14 <data>)
             0x4907, // ldr	r1, [pc, #28]	@ (20 <data+0xc>)
             0x2209, // movs	r2, #9
@@ -450,11 +449,11 @@ suite("asm", {}, () => {
         uut.bl(target)
 
         const ret = uut.assemble();
-        assert.deepEqual(ret.relocs.length, 1)
-        assert.deepEqual(ret.relocs[0].offset, 20)
-        assert.deepEqual(ret.relocs[0].target, target)
-        assert.deepEqual(ret.relocs[0].action, thumbBlReloc)
-        assert.deepEqual(ret.code, fromRaw32(
+        assert.deepEqual(ret.relocations.length, 1)
+        assert.deepEqual(ret.relocations[0].offset, 20)
+        assert.deepEqual(ret.relocations[0].target, target)
+        assert.deepEqual(ret.relocations[0].action, asm.thumbBlReloc)
+        assert.deepEqual(ret.content, fromRaw32(
             0xf3ef_8010, // mrs	r0, PRIMASK
             0xf38c_8814, // msr	CONTROL, ip
             0xf3bf_8f4f, // dsb	sy

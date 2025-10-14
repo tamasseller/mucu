@@ -385,5 +385,7 @@ export function generateCfg(ast: Procedure): BasicBlock
         exit.add(new RetvalOperation(idx, exit.importVariableValue(r)))
     });
 
+    exit.terminateExit()
+
     return CfgBuilder.build(entry)
 }

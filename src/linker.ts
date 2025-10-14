@@ -1,4 +1,4 @@
-import * as armv6 from './armv6';
+import Procedure from './program/procedure';
 
 import assert from "assert"
 
@@ -48,18 +48,7 @@ function align(v: number, bits: number): number
     return (v + alignMask) & ~alignMask
 }
 
-export function thumbBlReloc(isn: Buffer, selfAddr: number, targetAddr: number) 
-{
-    assert((selfAddr & 1) == 0)
-    assert((targetAddr & 1) == 0)
-
-    const off = (selfAddr >>> 1) - ((targetAddr >>> 1) + 2);
-
-    assert(-8388608 <= off && off <= 8388607)
-    isn.writeUint32LE(armv6.fmtBl(off))
-}
-
-export function link(entry: Symbol, inputs: FragmentInput[]): Executable
+export function link(entry: Procedure, inputs: FragmentInput[]): Executable
 {
     let currentLocation = 0;
     

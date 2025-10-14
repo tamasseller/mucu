@@ -37,6 +37,13 @@ export class ArgumentPseudoIsn extends Operation implements CmIsn
     }
 
     emit(asm: Assembler) {}
+
+    isIdentical(other: Operation): boolean 
+    {
+        return other instanceof ArgumentPseudoIsn 
+            && other.idx === this.idx
+            && other.value.value === this.value.value
+    }
 }
 
 export class RetvalPseudoIsn extends Operation implements CmIsn
@@ -64,6 +71,13 @@ export class RetvalPseudoIsn extends Operation implements CmIsn
     }
 
     emit(asm: Assembler) {}
+
+    isIdentical(other: Operation): boolean 
+    {
+        return other instanceof RetvalPseudoIsn 
+            && other.idx === this.idx
+            && other.value.value === this.value.value
+    }
 }
 
 // x = y
@@ -251,6 +265,15 @@ export class AddSubRegRegImm3 extends Operation implements CmIsn
                 break;
         }
     }
+
+    isIdentical(other: Operation): boolean 
+    {
+        return other instanceof AddSubRegRegImm3
+            && other.op === this.op
+            && other.left.value === this.left.value
+            && other.right === this.right
+            && other.result.value === this.result.value
+    }
 }
 
 // x = y << c(<32)
@@ -311,6 +334,15 @@ export class ShiftRegRegImm5 extends Operation implements CmIsn
                 asm.lsrs(this.result.value.reg, this.left.value.reg, this.right)
                 break;
         }
+    }
+
+    isIdentical(other: Operation): boolean 
+    {
+        return other instanceof ShiftRegRegImm5
+            && other.op === this.op
+            && other.left.value === this.left.value
+            && other.right === this.right
+            && other.result.value === this.result.value
     }
 }
 
@@ -386,6 +418,14 @@ export class ArithRegReg extends Operation implements CmIsn
                 break;
         }
     }
+
+    isIdentical(other: Operation): boolean 
+    {
+        return other instanceof ArithRegReg
+            && other.op === this.op
+            && other.leftResult.value === this.leftResult.value
+            && other.right.value === this.right.value
+    }
 }
 
 // $ = x - y
@@ -435,6 +475,13 @@ export class CompareRegReg extends Operation implements CmIsn
         assert(this.right.value instanceof CoreReg)
 
         asm.cmp(this.left.value.reg, this.right.value.reg)
+    }
+
+    isIdentical(other: Operation): boolean 
+    {
+        return other instanceof CompareRegReg
+            && other.left.value === this.left.value
+            && other.right.value === this.right.value
     }
 }
 
@@ -486,6 +533,13 @@ export class CompareNegRegReg extends Operation implements CmIsn
 
         asm.cmn(this.left.value.reg, this.right.value.reg)
     }
+
+    isIdentical(other: Operation): boolean 
+    {
+        return other instanceof CompareNegRegReg
+            && other.left.value === this.left.value
+            && other.right.value === this.right.value
+    }
 }
 
 // $ = x & y
@@ -535,6 +589,13 @@ export class TestRegReg extends Operation implements CmIsn
         assert(this.right.value instanceof CoreReg)
 
         asm.tst(this.left.value.reg, this.right.value.reg)
+    }
+
+    isIdentical(other: Operation): boolean 
+    {
+        return other instanceof TestRegReg
+            && other.left.value === this.left.value
+            && other.right.value === this.right.value
     }
 }
 
@@ -593,6 +654,13 @@ export class AddSubRegImm8 extends Operation implements CmIsn
                 break;
         }
     }
+
+    isIdentical(other: Operation): boolean 
+    {
+        return other instanceof AddSubRegImm8
+            && other.leftResult.value === this.leftResult.value
+            && other.right === this.right
+    }
 }
 
 // $ = x - c(<256)
@@ -637,6 +705,13 @@ export class CompareRegImm8 extends Operation implements CmIsn
         assert(this.left.value instanceof CoreReg)
 
         asm.cmp(this.left.value.reg, this.right)
+    }
+
+    isIdentical(other: Operation): boolean 
+    {
+        return other instanceof CompareRegImm8
+            && other.left.value === this.left.value
+            && other.right === this.right
     }
 }
 
@@ -697,6 +772,15 @@ export class LoadRegOffset extends Operation implements CmIsn
     }
 
     override get hasSideEffect(): boolean { return true }
+
+    isIdentical(other: Operation): boolean 
+    {
+        return other instanceof LoadRegOffset
+            && other.base.value === this.base.value
+            && other.offset.value === this.offset.value
+            && other.value.value === this.value.value
+            && other.width === this.width
+    }
 }
 
 // x <- [y + c(<32*width)]
@@ -756,6 +840,15 @@ export class LoadImmOffset extends Operation implements CmIsn
     }
 
     override get hasSideEffect(): boolean { return true }
+
+    isIdentical(other: Operation): boolean 
+    {
+        return other instanceof LoadImmOffset
+            && other.base.value === this.base.value
+            && other.offset === this.offset
+            && other.value.value === this.value.value
+            && other.width === this.width
+    }
 }
 
 // x <- [y++]
@@ -800,6 +893,13 @@ export class LoadWordRegIncrement extends Operation implements CmIsn
     }
 
     override get hasSideEffect(): boolean { return true }
+
+    isIdentical(other: Operation): boolean 
+    {
+        return other instanceof LoadWordRegIncrement
+            && other.value.value === this.value.value
+            && other.address.value === this.value.value
+    }
 }
 
 // [y + z] <- x
@@ -855,6 +955,15 @@ export class StoreRegOffset extends Operation implements CmIsn
     }
 
     override get hasSideEffect(): boolean { return true }
+
+    isIdentical(other: Operation): boolean 
+    {
+        return other instanceof StoreRegOffset
+            && other.base.value === this.base.value
+            && other.offset.value === this.offset.value
+            && other.value.value === this.value.value
+            && other.width === this.width
+    }
 }
 
 // x <- [y + c(<32*width)]
@@ -910,6 +1019,15 @@ export class StoreImmOffset extends Operation implements CmIsn
     }
 
     override get hasSideEffect(): boolean { return true }
+
+    isIdentical(other: Operation): boolean 
+    {
+        return other instanceof StoreImmOffset
+            && other.base.value === this.base.value
+            && other.offset === this.offset
+            && other.value.value === this.value.value
+            && other.width === this.width
+    }
 }
 
 // [y++] <- x
@@ -954,6 +1072,13 @@ export class StoreWordRegIncrement extends Operation implements CmIsn
     }
 
     override get hasSideEffect(): boolean { return true }
+
+    isIdentical(other: Operation): boolean 
+    {
+        return other instanceof StoreWordRegIncrement
+            && other.value.value === this.value.value
+            && other.address.value === this.value.value
+    }
 }
 
 export const enum CmCondition

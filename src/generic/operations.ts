@@ -79,6 +79,13 @@ export class ArgumentOperation extends Operation
     get hasSideEffect(): boolean {
         return true
     }
+
+    isIdentical(other: Operation): boolean 
+    {
+        return other instanceof ArgumentOperation 
+            && other.idx === this.idx
+            && other.value.value === this.value.value
+    }
 }
 
 export class RetvalOperation extends Operation 
@@ -103,6 +110,13 @@ export class RetvalOperation extends Operation
     get hasSideEffect(): boolean {
         return true
     }
+
+    isIdentical(other: Operation): boolean 
+    {
+        return other instanceof RetvalOperation 
+            && other.idx === this.idx
+            && other.value.value === this.value.value
+    }
 }
 
 export class LiteralOperation extends Operation 
@@ -126,6 +140,13 @@ export class LiteralOperation extends Operation
 
     override get outputs(): OutputOperand[] {
         return [this.result]
+    }
+
+    isIdentical(other: Operation): boolean 
+    {
+        return other instanceof LiteralOperation 
+            && other.value === this.value
+            && other.result.value === this.result.value
     }
 }
 
@@ -171,6 +192,15 @@ export class ArithmeticOperation extends Operation
     override get outputs(): OutputOperand[] {
         return [this.result]
     }
+
+    isIdentical(other: Operation): boolean 
+    {
+        return other instanceof ArithmeticOperation
+            && other.op === this.op
+            && other.left.value === this.left.value
+            && other.right.value === this.right.value
+            && other.result.value === this.result.value
+    }
 }
 
 export class CopyOperation extends Operation 
@@ -204,6 +234,13 @@ export class CopyOperation extends Operation
 
     override get outputs(): OutputOperand[] {
         return [this.destination]
+    }
+
+    isIdentical(other: Operation): boolean 
+    {
+        return other instanceof CopyOperation
+            && other.destination.value === this.destination.value
+            && other.source.value === this.source.value
     }
 }
 
@@ -239,6 +276,14 @@ export class LoadOperation extends Operation
     }
 
     override get hasSideEffect(): boolean { return true }
+
+    isIdentical(other: Operation): boolean 
+    {
+        return other instanceof LoadOperation
+            && other.address.value === this.address.value
+            && other.value.value === this.value.value
+            && other.width == this.width
+    }
 }
 
 export class StoreOperation extends Operation 
@@ -269,4 +314,12 @@ export class StoreOperation extends Operation
     }
 
     override get hasSideEffect(): boolean { return true }
+
+    isIdentical(other: Operation): boolean 
+    {
+        return other instanceof StoreOperation
+            && other.address.value === this.address.value
+            && other.value.value === this.value.value
+            && other.width == this.width
+    }
 }

@@ -67,8 +67,13 @@ export function mapArithmeticOp(op: ArithmeticOperation): Operation[]
                 // NO BREAK                    
             default: 
                 // Arithmetic.Mul | Arithmetic.BitAnd | Arithmetic.BitOr | Arithmetic.BitXor
-            
-                return [
+
+                return (op.left.value === op.right.value && (op.left.isLastUse || op.right.isLastUse)) 
+                ? [
+                    new ArithRegReg(op.left.value, op.right.value, op.op),
+                    new CopyIsn(op.result.value, op.left.value)
+                ]
+                : [
                     new CopyIsn(op.result.value, op.left.value),
                     new ArithRegReg(op.result.value, op.right.value, op.op)
                 ]

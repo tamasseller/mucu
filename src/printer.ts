@@ -1,12 +1,12 @@
 import assert from "assert";
-import { BasicBlock, BranchTermination, Conditional, Operation, StraightTermination, Termination } from "./cfg/basicBlock";
+import { BasicBlock, BranchTermination, Conditional, ExitTermination, Operation, StraightTermination, Termination } from "./cfg/basicBlock";
 import { ArgumentOperation, ArithmeticOperation, conditionStr, CopyOperation, LiteralOperation, LoadOperation, RetvalOperation, StoreOperation, TacConditional } from "./generic/operations";
 import { reversePostOrderBlocks } from "./cfg/traversal";
 import { Variable } from "./program/expression";
 import { arithmeticStr } from "./generic/arithmetic";
 import { InputOperand, Operand } from "./cfg/value";
 import { AddSubRegImm8, AddSubRegRegImm3, AddSubRegRegReg, ArgumentPseudoIsn, ArithRegReg, CmConditional, cmConditionStr, CompareNegRegReg, CompareRegImm8, CompareRegReg, LiteralIsn, LoadImmOffset, LoadRegOffset, LoadWordRegIncrement, RetvalPseudoIsn, ShiftRegRegImm5, StoreImmOffset, StoreRegOffset, StoreWordRegIncrement, TestRegReg } from "./specific/instructions";
-import { flagsReg } from "./specific/registers";
+import { CoreReg, flagsReg } from "./specific/registers";
 
 function formatHex(v: number, pad: number): string {
     return "0x" + ("0".repeat(pad) + v.toString(16)).slice(-pad);
@@ -46,7 +46,12 @@ export class ProcedurePrinter {
     public value(t: Operand) {
         const cv = (t instanceof InputOperand) ? t.definition?.op?.constValue() : undefined
 
-        const name = t.value === flagsReg ? "$" : `x${t.value.idx}`
+        
+        const name = t.value === flagsReg 
+            ? "$" 
+            : t.value instanceof CoreReg
+                ? `r${t.value.reg.idx}`
+                : `x${t.value.idx}`
 
         return name + ((cv !== undefined) ? `(${format32(cv)})` : "")
     }
@@ -138,18 +143,21 @@ export class ProcedurePrinter {
         }
     }
 
-    private closing = (termination: Termination) => {
-        if (termination === undefined) {
-            return 'return';
-        }
-        else if (termination instanceof StraightTermination) {
+    private closing = (termination: Termination) => 
+    {
+        if (termination instanceof StraightTermination) {
             return this.goto(termination.next);
         }
-        else {
-            assert(termination instanceof BranchTermination)
+        else if(termination instanceof BranchTermination)
+        {
             return `if ${this.condition(termination.conditional)} `
                 + `then ${this.goto(termination.then)} `
                 + `else ${this.goto(termination.owise)}`;
+        }
+        else
+        {
+            assert(termination instanceof ExitTermination) 
+            return 'return';
         }
     }
 

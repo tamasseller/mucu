@@ -1,7 +1,7 @@
 import assert from "assert"
 
 import { Variable } from "../program/expression"
-import { BasicBlock, BranchTermination, Conditional, Operation, StraightTermination, Termination } from "./basicBlock"
+import { BasicBlock, BranchTermination, Conditional, ExitTermination, Operation, StraightTermination, Termination } from "./basicBlock"
 import { DefiningOperand, InputOperand, OutputOperand, Value } from "./value"
 
 export class CfgBuilder 
@@ -86,9 +86,9 @@ export class CodeBuilder
     getDefinition(value: Value): Operation | undefined
     {
         const oop = this.available.get(value);
-        assert(oop !== undefined)
+        // assert(oop !== undefined)
 
-        return oop.op;
+        return oop?.op;
     }
 
     importVariableValue(v: Variable): Value 
@@ -120,6 +120,11 @@ export class CodeBuilder
         const oop = new OutputOperand(undefined, value)
         this.imports.set(variable, oop)
         this.available.set(value, oop)
+    }
+
+    getImport(variable: Variable): Value | undefined
+    {
+        return this.imports.get(variable)?.value
     }
     
     private bindInput(iop: InputOperand): void
@@ -156,6 +161,11 @@ export class CodeBuilder
         this.exports.set(variable, iop)
     }
 
+    getExport(variable: Variable): Value | undefined
+    {
+        return this.exports.get(variable)?.value
+    }
+
     terminateStraight(next: CodeBuilder)
     {
         this._successors = [next]
@@ -177,6 +187,12 @@ export class CodeBuilder
         };
     }
 
+    terminateExit()
+    {
+        this._successors = []
+        this.termination = (bldr) => new ExitTermination();
+    }
+
     build(bldr: CfgBuilder, predecessors: CodeBuilder[]): BasicBlock
     {
         return new BasicBlock(this.ops, this.imports, this.exports, bb => 
@@ -194,21 +210,21 @@ export class CodeBuilder
         })
     }
 
-    static recreateImports(bb: BasicBlock, importMapper = (v: Value) => v): CodeBuilder
+    recreateImports(bb: BasicBlock, importMapper = (v: Value) => v): void
     {
-        const cb = new CodeBuilder()
-
         for(const [variable, value] of bb.used.entries())
         {
             const oop = new OutputOperand(undefined, importMapper(value.value))
-            cb.imports.set(variable, oop)
-            cb.available.set(oop.value, oop)
-        }
 
-        return cb;
+            assert(!this.imports.has(variable))
+            this.imports.set(variable, oop)
+
+            assert(!this.available.has(oop.value))
+            this.available.set(oop.value, oop)
+        }
     }
 
-    recreateOps(bb: BasicBlock, opMapper = (op: Operation) => [op.copy()]) 
+    recreateOps(bb: BasicBlock, opMapper = (op: Operation) => [op.copy()]): void 
     {
         for(const op of bb.ops) 
         {
@@ -219,7 +235,7 @@ export class CodeBuilder
         }
     }
 
-    recreateExports(bb: BasicBlock, exportMapper = (v: Value) => v)
+    recreateExports(bb: BasicBlock, exportMapper = (v: Value) => v): void
     {
         for(const [variable, value] of bb.defd.entries())
         {
@@ -233,11 +249,50 @@ export class CodeBuilder
         exportMapper = (v: Value) => v, 
         importMapper = (v: Value) => v): CodeBuilder
     {
-        const cb = CodeBuilder.recreateImports(bb, importMapper)
+        const cb = new CodeBuilder()
+
+        cb.recreateImports(bb, importMapper)
         cb.recreateOps(bb, opMapper)
         cb.recreateExports(bb, exportMapper)
 
         return cb;
+    }
+
+    static merge(bbs: BasicBlock[]): [CodeBuilder, Map<Value, Value>]
+    {
+        const cb = new CodeBuilder()
+        const valueSubs = new Map<Value, Value>()
+
+        for(const bb of bbs)
+        {
+            for(const [variable, value] of bb.used.entries())
+            {
+                const exp = cb.getExport(variable)
+                if(exp !== undefined)
+                {
+                    assert(!valueSubs.has(value.value))
+                    valueSubs.set(value.value, exp)
+                }
+                else
+                {
+                    const imp = cb.getImport(variable)
+                    if(imp !== undefined)
+                    {
+                        assert(!valueSubs.has(value.value))
+                        valueSubs.set(value.value, imp)
+                    }
+                    else
+                    {
+                        cb.setImport(variable, value.value)
+                    }
+                }
+            }
+    
+            cb.recreateOps(bb, op => [op.copy(valueSubs)])
+            cb.recreateExports(bb)
+        }
+
+        return [cb, valueSubs]
     }
 }
 
@@ -322,6 +377,11 @@ export class CfgRewriter
                     cbs.get(term.owise),
                     term.conditional.copy()
                 )
+            }
+            else
+            {
+                assert(term instanceof ExitTermination)
+                cb.terminateExit()
             }
         }
 

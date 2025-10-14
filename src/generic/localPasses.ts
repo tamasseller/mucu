@@ -39,7 +39,9 @@ export function addTransitBindings(entry: BasicBlock)
 
     return new CfgRewriter().rewrite(entry, bb => 
     {
-        const cb = CodeBuilder.recreateImports(bb)
+        const cb = new CodeBuilder()
+        
+        cb.recreateImports(bb)
         cb.recreateOps(bb)
 
         const liveOut = l.get(bb).liveOut
@@ -100,7 +102,9 @@ export function retardDefinitions(entry: BasicBlock): BasicBlock
 {
     return new CfgRewriter().rewrite(entry, bb => 
     {
-        const ret = CodeBuilder.recreateImports(bb)
+        const ret = new CodeBuilder()
+        ret.recreateImports(bb)
+
         const done = new Set<Operation>()
     
         const request = (op: Operation) => 

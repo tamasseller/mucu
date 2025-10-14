@@ -77,7 +77,8 @@ export function bindPhis(entry: BasicBlock): BasicBlock
         }
         else
         {
-            cb = CodeBuilder.recreateImports(bb)
+            cb = new CodeBuilder()
+            cb.recreateImports(bb)
         }
 
         Iterator.from(bb.ops).forEach(op => cb.add(op.copy()))

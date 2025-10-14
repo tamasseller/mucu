@@ -3,16 +3,21 @@ import { reversePostOrderBlocks } from "./cfg/traversal";
 import { generateCfg } from "./generic/generateCfg";
 import { propagateCopies, addTransitBindings, retardDefinitions } from "./generic/localPasses";
 import { selectInstructions } from "./specific/machine";
-import { breakCriticalEdges, eliminateDumbJumps, straightenConditionals } from "./generic/factoring";
+import { breakCriticalEdges, eliminateDumbJumps, foldConstantConditionals, mergeIdenticalPredecessors, mergeBlocks as mergeTrivialEdges, straightenConditionals } from "./generic/factoring";
 import { transformConditional } from "./specific/conditional";
 import { straightenLoops } from "./generic/loops";
 import { generateCode } from "./specific/generateCode";
 import { BasicBlock } from "./cfg/basicBlock";
 import { allocateRegisters } from "./generic/registerAllocation";
 import { ProcedurePrinter } from "./printer";
-import { RelocatableObject } from "./specific/linker";
+import { RelocatableObject } from "./linker";
 
-export function compile(ast: Procedure): RelocatableObject
+interface CompilerOptions
+{
+    dumpCfg?: boolean
+}
+
+export function compile(ast: Procedure, opts?: CompilerOptions): RelocatableObject
 {
     /*
      * First convert the AST of the procedure into an inital CFG form where
@@ -29,6 +34,24 @@ export function compile(ast: Procedure): RelocatableObject
         * could only be avoid at the cost of significantly higher complexity.
         */
         [eliminateDumbJumps, "eliminate dumb jumps"],
+
+        /*
+        * Merge blocks along tivial edges to get constant as close as possible
+        * to branches.
+        */
+        [mergeTrivialEdges, "merge blocks"],
+
+        /*
+        * Merge up conditionally terminated blocks to their predecessor (which 
+        * might genuinely cause some code duplication) if it allows weakening 
+        * the conditional to a straight termination.
+        */
+        [foldConstantConditionals, "fold constant conditionals"],
+
+        /*
+        * New trivial edges might have been created, merge blocks along them.
+        */
+        [mergeTrivialEdges, "merge blocks again"],
 
         /*
         * Eliminate edges where both the source has multiple successors 
@@ -89,13 +112,32 @@ export function compile(ast: Procedure): RelocatableObject
         [eliminateDumbJumps, "eliminate dumb jumps (reloaded)"],
 
         /*
+        * Merge blocks along tivial edges.
+        */
+        [mergeTrivialEdges, "merge blocks"],
+
+        /*
+        * Merge blocks along tivial edges.
+        */
+        [mergeIdenticalPredecessors, "merge identical predecessors"],
+
+        /*
         * Rotate the conditional terminations to make loop bodies as straight as possible, this 
         * can affect the final order of bbs.
         */
         [straightenLoops, "straighten loops"]
     ]) {
-        // console.log(`${pass[1]}:\n${ProcedurePrinter.print(cfg)}\n\n`)
+        if(opts?.dumpCfg ?? false)
+        {
+            console.log(`\n${ProcedurePrinter.print(cfg)}\n\n${pass[1]}`)
+        }
+
         cfg = (pass[0] as (bb: BasicBlock) => BasicBlock)(cfg)
+    }
+
+    if(opts?.dumpCfg ?? false)
+    {
+        console.log(`\n${ProcedurePrinter.print(cfg)}\n\n`)
     }
 
     /*
@@ -108,17 +150,19 @@ export function compile(ast: Procedure): RelocatableObject
      */
     straightenConditionals(bbs)
     
+    if(opts?.dumpCfg ?? false)
+    {
+        console.log(`straightenConditionals\n${ProcedurePrinter.print(cfg)}\n\n`)
+    }
     /* 
      * Finally generate the binary.
      */
-    const {code, relocs} = generateCode(bbs)
+    const code = generateCode(bbs)
 
     return {
         symbol: ast,
-        length: code.length,
-        relocations: relocs,
-        alignmentBits: 2,
-        content: code
+        length: code.content.length,
+        ...code
     }
 }
 
@@ -140,5 +184,4 @@ export function compile(ast: Procedure): RelocatableObject
 //      - nonreg arguments/retvals
 //      - frame allocation
 
-// TODO smarten removeDumbJumps to do some other factoring as well
 // TODO smarten selectInstructions to do actual multireg *mia (copy double-word usecase)

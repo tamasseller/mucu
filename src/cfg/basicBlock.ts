@@ -48,7 +48,22 @@ export class BranchTermination
     }
 }
 
-export type Termination = StraightTermination | BranchTermination;
+export class ExitTermination
+{
+    constructor() {}
+
+    get successors(): BasicBlock[]
+    {
+        return []
+    }
+
+    get inputs(): InputOperand[] 
+    {
+        return []
+    }
+}
+
+export type Termination = StraightTermination | BranchTermination | ExitTermination;
 
 export abstract class Operation 
 {
@@ -59,12 +74,13 @@ export abstract class Operation
     constValue(input?: Map<Value, number>): number | undefined { return undefined } 
 
     abstract copy(subs?: Map<Value, Value>): Operation 
+    abstract isIdentical(other: Operation): boolean
 }
 
 export class BasicBlock
 {
     private readonly _predecessors: BasicBlock[] = []
-    private _termination: Termination | undefined;
+    private _termination: Termination;
 
     constructor(
         private readonly _ops: Operation[],
@@ -72,7 +88,7 @@ export class BasicBlock
         private readonly _defd: Map<Variable, InputOperand>,
         binder: (bb: BasicBlock) => {
             predecessors: BasicBlock[]
-            termination: Termination | undefined
+            termination: Termination
         }
     )
     {

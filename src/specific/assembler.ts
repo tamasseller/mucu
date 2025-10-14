@@ -1,7 +1,7 @@
 import assert from "assert";
 import * as armv6 from "./armv6";
 import Procedure from "../program/procedure";
-import { RelocAction, Relocation, Symbol, thumbBlReloc } from "./linker";
+import { RelocAction, Relocation, Symbol } from "../linker";
 
 type Enumerate<N extends number, Acc extends number[] = []> = Acc['length'] extends N ? Acc[number] : Enumerate<N, [...Acc, Acc['length']]>
 type Enumerate2<N extends number, Acc extends number[] = []> = Acc['length'] extends N ? Acc[number] : Enumerate2<N, [0, ...Acc, Acc['length']]>
@@ -57,6 +57,17 @@ class T32 implements IsnGenerator
 
 function t32(gen: (offset: number) => number, reloc?: {action: RelocAction, target: Symbol}) {
     return new T32(gen, reloc)
+}
+
+export function thumbBlReloc(isn: Buffer, selfAddr: number, targetAddr: number) 
+{
+    assert((selfAddr & 1) == 0)
+    assert((targetAddr & 1) == 0)
+
+    const off = (selfAddr >>> 1) - ((targetAddr >>> 1) + 2);
+
+    assert(-8388608 <= off && off <= 8388607)
+    isn.writeUint32LE(armv6.fmtBl(off))
 }
 
 export class Assembler
@@ -306,28 +317,28 @@ export class Assembler
         action: thumbBlReloc
     })
 
-    public assemble(): { code: Buffer; relocs: Relocation[]; }
+    public assemble(): { content: Buffer; relocations: Relocation[]; }
     {
-        const relocs: Relocation[] = []
+        const relocations: Relocation[] = []
 
         const codeLen = 2 * this.isns.reduce((acc, isn) => acc + isn.width, 0)
         const poolStart = (codeLen + 3) & ~3
         const poolLen = this.pool.reduce((acc, curr) => acc + ((curr.data.byteLength + 3) & ~3), 0)
 
-        const code = Buffer.alloc((0 < poolLen) ? (poolStart + poolLen) : codeLen)
+        const content = Buffer.alloc((0 < poolLen) ? (poolStart + poolLen) : codeLen)
 
         if(0 < poolLen)
         {
             for(let offset = codeLen; offset < poolStart; offset += 2)
             {
-                code.writeUint16LE(armv6.fmtNoArg(armv6.NoArgOp.NOP) >>> 0, offset)
+                content.writeUint16LE(armv6.fmtNoArg(armv6.NoArgOp.NOP) >>> 0, offset)
             }
 
             let offset = poolStart;
             for(const p of this.pool)
             {
                 p.label.offset = offset >> 1;
-                code.set(p.data, offset)
+                content.set(p.data, offset)
                 offset += (p.data.byteLength + 3) & ~3
             }
         }
@@ -338,24 +349,22 @@ export class Assembler
         {
             if(isn.reloc)
             {
-                relocs.push({...isn.reloc, offset: offset * 2})
+                relocations.push({...isn.reloc, offset: offset * 2})
             }
 
             if(isn.width === 1)
             {
-                code.writeUInt16LE(isn.gen(offset) >>> 0, 2 * offset);
+                content.writeUInt16LE(isn.gen(offset) >>> 0, 2 * offset);
                 offset++
             }
             else
             {
                 assert(isn.width === 2)
-                code.writeUInt32LE(isn.gen(offset) >>> 0, 2 * offset);
+                content.writeUInt32LE(isn.gen(offset) >>> 0, 2 * offset);
                 offset += 2
             }
         }
 
-        return {code, relocs};
+        return {content, relocations};
     }
 }
-
-

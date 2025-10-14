@@ -91,7 +91,7 @@ export function allocateRegisters(entry: BasicBlock): BasicBlock
         */
         const bound = bindPhis(entry)
 
-        ProcedurePrinter.print(bound)
+        // console.log(ProcedurePrinter.print(bound))
 
         const interference = constructInterferenceGraph(lowRegs, bound)
         

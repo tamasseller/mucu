@@ -7,11 +7,29 @@ import { LoadStoreWidth } from '../src//program/common';
 import { disassemble } from '../src/specific/disassembler';
 
 test("returnArg", () => {
-	assert.strictEqual(disassemble(compile(Procedure.build(b => {
-		const [a] = b.args
-		b.return(a)
+	assert.strictEqual(disassemble(compile(Procedure.build($ => {
+		const [a] = $.args
+		$.return(a)
 	})).content!),
 `     bx lr`
+)})
+
+test("multiply", () => {
+	assert.strictEqual(disassemble(compile(Procedure.build($ => {
+		const [a, b] = $.args
+		$.return(a.mul(b))
+	})).content!),
+`     muls r0, r1
+     bx   lr`
+)})
+
+test("square", () => {
+	assert.strictEqual(disassemble(compile(Procedure.build($ => {
+		const [a] = $.args
+		$.return(a.mul(a))
+	})).content!),
+`     muls r0, r0
+     bx   lr`
 )})
 
 test("branch", () => {
@@ -29,9 +47,9 @@ l0:  bx   lr`
 )});
 
 test("min", () => {
-	assert.strictEqual(disassemble(compile(Procedure.build(b => {
-		const [l, m] = b.args
-		b.return(l.lt(m).ternary(l, m))
+	assert.strictEqual(disassemble(compile(Procedure.build($ => {
+		const [l, m] = $.args
+		$.return(l.lt(m).ternary(l, m))
 	})).content!),
 `     cmp r0, r1
      blo l0
@@ -40,9 +58,9 @@ l0:  bx  lr`
 )})
 
 test("sort", () => {
-	assert.strictEqual(disassemble(compile(Procedure.build(b => {
-		const [x, y] = b.args
-		b.branch(x.lt(y), 
+	assert.strictEqual(disassemble(compile(Procedure.build($ => {
+		const [x, y] = $.args
+		$.branch(x.lt(y), 
 			b => b.return(x, y),
 			b => b.return(y, x),
 		)
@@ -56,9 +74,9 @@ l0:  bx  lr`
 )})
 
 test("copy", () => {
-	assert.strictEqual(disassemble(compile(Procedure.build(b => {
-		const [d, s, e] = b.args
-		b.loop(d.ne(e), b => {
+	assert.strictEqual(disassemble(compile(Procedure.build($ => {
+		const [d, s, e] = $.args
+		$.loop(d.ne(e), b => {
 			b.add(d.store(s.load(LoadStoreWidth.U1), LoadStoreWidth.U1))
 			b.add(d.increment())
 			b.add(s.increment())
@@ -75,17 +93,17 @@ l1:  bx   lr`
 )})
 
 test("reality", () => {
-	assert.strictEqual(disassemble(compile(Procedure.build(b => 
+	assert.strictEqual(disassemble(compile(Procedure.build($ => 
 	{
 		const cr = new Constant(0x12345678);
 		const sr = new Constant(0x76543210);
 
-		const [dst, src, end] = b.args;
-		const ret = b.declare(-1)
+		const [dst, src, end] = $.args;
+		const ret = $.declare(-1)
 
-		b.add(cr.store(cr.load().bitand((~0x420) >>> 0).bitor(0x400))),
+		$.add(cr.store(cr.load().bitand((~0x420) >>> 0).bitor(0x400))),
 		
-		b.loop(dst.lt(end), b => {
+		$.loop(dst.lt(end), b => {
 			const i = b.declare(32)
 			b.loop(i.ne(0), b => {
                     const x = b.declare(src.load())
@@ -109,7 +127,7 @@ test("reality", () => {
 		}),
 
 		cr.store(cr.load().bitand((~0x420) >>> 0).bitor(0x020)),
-		b.return(ret)
+		$.return(ret)
 	})).content!),
 `     push {r4, r5, lr}
      ldr  r4, L0 ; 0x12345678
@@ -125,14 +143,12 @@ test("reality", () => {
 l0:  cmp  r0, r2
      bhs  l3
      movs r3, #32
-l1:  cmp  r3, #0
-     beq  l2
-     ldr  r4, [r1]
+l1:  ldr  r4, [r1]
      str  r4, [r0]
      adds r1, r1, #4
      adds r0, r0, #4
      subs r3, r3, #1
-     b    l1
+     bne  l1
 l2:  ldr  r3, L2 ; 0x76543210
      ldr  r4, [r3]
      ldr  r3, L3 ; 0x0000deff
