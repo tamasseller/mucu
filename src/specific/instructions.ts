@@ -854,22 +854,22 @@ export class LoadImmOffset extends Operation implements CmIsn
 // x <- [y++]
 export class LoadWordRegIncrement extends Operation implements CmIsn  
 {
-    readonly value: OutputOperand
     readonly address: InOutOperand
+    readonly values: OutputOperand[]
 
     constructor(
-        value: Value,
         address: Value,
+        ...values: Value[]
     ) {
         super();
-        this.value = new OutputOperand(this, value)
+        this.values = values.map(v => new OutputOperand(this, v))
         this.address = new InOutOperand(this, address)
     }
 
-    copy(subs?: Map<Value, Value>): Operation {
+    copy(subs?: Map<Value, Value>): LoadWordRegIncrement {
         return new LoadWordRegIncrement(
-            subs?.get(this.value.value) ?? this.value.value,
             subs?.get(this.address.value) ?? this.address.value,
+            ...this.values.map(v => subs?.get(v.value) ?? v.value)
         )
     }
 
@@ -878,18 +878,18 @@ export class LoadWordRegIncrement extends Operation implements CmIsn
     }
 
     override get outputs(): DefiningOperand[] {
-        return [this.value, this.address]
+        return [this.address, ...this.values]
     }
 
     emit(asm: Assembler) 
     {
-        assert(this.value.value instanceof CoreReg)
         assert(this.address.value instanceof CoreReg)
-
-        const t = this.value.value.reg
-        const a = this.address.value.reg
-        assert(a.idx !== t.idx)
-        asm.ldmia(a, [t])
+        asm.ldmia(this.address.value.reg, this.values.map(v => 
+        {
+            assert(v.value instanceof CoreReg)
+            assert(v.value.reg.idx != this.address.value.reg.idx)
+            return v.value.reg;
+        }))
     }
 
     override get hasSideEffect(): boolean { return true }
@@ -897,8 +897,14 @@ export class LoadWordRegIncrement extends Operation implements CmIsn
     isIdentical(other: Operation): boolean 
     {
         return other instanceof LoadWordRegIncrement
-            && other.value.value === this.value.value
-            && other.address.value === this.value.value
+            && other.values.length === this.values.length
+            && other.values.every((v, idx) => v.value === this.values[idx].value)
+            && other.address.value === this.address.value
+    }
+    
+    add(value: Value) 
+    {
+        this.values.push(new OutputOperand(this, value))
     }
 }
 
@@ -1033,27 +1039,27 @@ export class StoreImmOffset extends Operation implements CmIsn
 // [y++] <- x
 export class StoreWordRegIncrement extends Operation implements CmIsn  
 {
-    readonly value: InputOperand
     readonly address: InOutOperand
+    readonly values: InputOperand[]
 
     constructor(
-        value: Value,
         address: Value,
+        ...values: Value[]
     ) {
         super();
-        this.value = new InputOperand(this, value)
+        this.values = values.map(v => new InputOperand(this, v))
         this.address = new InOutOperand(this, address)
     }
 
-    copy(subs?: Map<Value, Value>): Operation {
+    copy(subs?: Map<Value, Value>): StoreWordRegIncrement {
         return new StoreWordRegIncrement(
-            subs?.get(this.value.value) ?? this.value.value,
             subs?.get(this.address.value) ?? this.address.value,
+            ...this.values.map(v => subs?.get(v.value) ?? v.value)
         )
     }
 
     override get inputs(): InputOperand[] {
-        return [this.value, this.address]
+        return [this.address, ...this.values]
     }
 
     override get outputs(): DefiningOperand[] {
@@ -1062,13 +1068,13 @@ export class StoreWordRegIncrement extends Operation implements CmIsn
 
     emit(asm: Assembler) 
     {
-        assert(this.value.value instanceof CoreReg)
         assert(this.address.value instanceof CoreReg)
-        
-        const t = this.value.value.reg
-        const a = this.address.value.reg
-        assert(a.idx !== t.idx)
-        asm.ldmia(a, [t])
+        asm.stmia(this.address.value.reg, this.values.map(v => 
+        {
+            assert(v.value instanceof CoreReg)
+            assert(v.value.reg.idx != this.address.value.reg.idx)
+            return v.value.reg;
+        }))
     }
 
     override get hasSideEffect(): boolean { return true }
@@ -1076,8 +1082,14 @@ export class StoreWordRegIncrement extends Operation implements CmIsn
     isIdentical(other: Operation): boolean 
     {
         return other instanceof StoreWordRegIncrement
-            && other.value.value === this.value.value
-            && other.address.value === this.value.value
+            && other.values.length === this.values.length
+            && other.values.every((v, idx) => v.value === this.values[idx].value)
+            && other.address.value === this.address.value
+    }
+
+    add(value: Value) 
+    {
+        this.values.push(new InputOperand(this, value))
     }
 }
 

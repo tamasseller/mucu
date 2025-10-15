@@ -1,11 +1,13 @@
 import assert from "assert";
 import { CopyOperation, LiteralOperation, ArithmeticOperation, LoadOperation, StoreOperation, ArgumentOperation, RetvalOperation } from "../generic/operations";
-import { OutputOperand, InputOperand } from "../cfg/value";
-import { BasicBlock } from "../cfg/basicBlock";
-import { ArgumentPseudoIsn, CopyIsn, LiteralIsn, RetvalPseudoIsn } from "./instructions";
+import { OutputOperand, InputOperand, Value, InOutOperand } from "../cfg/value";
+import { BasicBlock, Operation } from "../cfg/basicBlock";
+import { ArgumentPseudoIsn, CopyIsn, LiteralIsn, LoadWordRegIncrement, RetvalPseudoIsn, StoreWordRegIncrement } from "./instructions";
 import { mapLoadStoreOp } from "./loadStore";
 import { mapArithmeticOp } from "./arithmetic";
-import { CfgRewriter, CodeBuilder } from "../cfg/cfgBuilder";
+import { CfgBuilder, CfgRewriter, CodeBuilder } from "../cfg/cfgBuilder";
+import { subscribe } from "diagnostics_channel";
+import { CoreReg } from "./registers";
 
 export class OpInfo
 {
@@ -36,8 +38,14 @@ export function selectInstructions(entry: BasicBlock): BasicBlock
 
     return new CfgRewriter().rewrite(entry, bb => 
     {
+        const ignored = new Set<Operation>()
+
         const ret = CodeBuilder.recreate(bb, op => 
         {
+            if(ignored.has(op))
+            {
+                return []
+            }
             if(op instanceof ArgumentOperation)
             {
                 return [new ArgumentPseudoIsn(op.idx, op.value.value)]
@@ -61,9 +69,58 @@ export function selectInstructions(entry: BasicBlock): BasicBlock
             else
             {
                 assert(op instanceof LoadOperation || op instanceof StoreOperation)
-                return mapLoadStoreOp(op)
+                return mapLoadStoreOp(op, ignored)
             }
         })
         return ret
     })
 }
+
+type MiaIsn = LoadWordRegIncrement | StoreWordRegIncrement
+
+export function mergeMia(entry: BasicBlock): BasicBlock
+{
+    return new CfgRewriter().rewrite(entry, bb => 
+    {
+        const substitutes = new Map<Operation, MiaIsn[]>()
+
+        let current: MiaIsn | undefined = undefined
+        for(const op of bb.ops)
+        {
+            if(op instanceof LoadWordRegIncrement || op instanceof StoreWordRegIncrement)
+            {
+                if(((current instanceof LoadWordRegIncrement && op instanceof LoadWordRegIncrement)
+                        || (current instanceof StoreWordRegIncrement && op instanceof StoreWordRegIncrement))
+                        && op.address.value === current.address.value)
+                {
+                    assert(op.values.length === 1)
+                    const [val] = op.values   
+                    assert(val.value instanceof CoreReg)
+
+                    const [joined] = substitutes.get(current)
+                    const max = Math.max(...joined.values.map((x: OutputOperand | InputOperand) => {
+                        assert(x.value instanceof CoreReg)
+                        return x.value.idx
+                    }))
+
+                    if(max < val.value.idx)
+                    {
+                        joined.add(val.value)
+                        substitutes.set(op, [])
+                        continue
+                    }
+                }
+
+                current = op
+                substitutes.set(op, [op.copy()])
+            }
+            else
+            {
+                current = undefined
+            }
+        }
+
+        return CodeBuilder.recreate(bb, op => substitutes.get(op) ?? [op.copy()])
+    })
+}
+

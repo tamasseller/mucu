@@ -103,68 +103,76 @@ test("reality", () => {
 
 		$.add(cr.store(cr.load().bitand((~0x420) >>> 0).bitor(0x400))),
 		
-		$.loop(dst.lt(end), b => {
-			const i = b.declare(32)
-			b.loop(i.ne(0), b => {
-                    const x = b.declare(src.load())
-				b.add(src.increment(4))
-                    // const y = b.declare(src.load())
-				// b.add(src.increment(4))
+		$.loop(dst.lt(end), $ =>
+		{
+			const i = $.declare(16)
+			$.loop(i.ne(0), $ =>
+			{
+				const x = $.declare(src.load())
+				$.add(src.increment(4))
+				const y = $.declare(src.load())
+				$.add(src.increment(4))
+				const z = $.declare(src.load())
+				$.add(src.increment(4))
+				const w = $.declare(src.load())
+				$.add(src.increment(4))
 
-                    b.add(dst.store(x))
-				b.add(dst.increment(4))
-                    // b.add(dst.store(y))
-				// b.add(dst.increment(4))
-                    
-				b.add(i.decrement())
+				$.add(dst.store(x))
+				$.add(dst.increment(4))
+				$.add(dst.store(y))
+				$.add(dst.increment(4))
+				$.add(dst.store(z))
+				$.add(dst.increment(4))
+				$.add(dst.store(w))
+				$.add(dst.increment(4))
+
+				$.add(i.decrement())
 			})
 
-			b.loop(sr.load().bitand(0xdeff).ne(0xc0de), () => {})
+			$.loop(sr.load().bitand(0xdeff).ne(0xc0de), () => {})
 
-			b.add(ret.set(sr.load().bitand(0x3f8)))
-			
-			b.branch(ret.ne(0), b => b.break())
+			$.add(ret.set(sr.load().bitand(0x3f8)))
+
+			$.branch(ret.ne(0), b => b.break())
 		}),
 
 		cr.store(cr.load().bitand((~0x420) >>> 0).bitor(0x020)),
 		$.return(ret)
 	})).content!),
-`     push {r4, r5, lr}
-     ldr  r4, L0 ; 0x12345678
-     ldr  r5, [r4]
-     ldr  r3, L1 ; 0xfffffbdf
-     ands r5, r3
-     movs r3, #128
-     lsls r3, r3, #3
-     orrs r5, r3
-     str  r5, [r4]
-     movs r3, #0
-     mvns r3, r3
-l0:  cmp  r0, r2
-     bhs  l3
-     movs r3, #32
-l1:  ldr  r4, [r1]
-     str  r4, [r0]
-     adds r1, r1, #4
-     adds r0, r0, #4
-     subs r3, r3, #1
-     bne  l1
-l2:  ldr  r3, L2 ; 0x76543210
-     ldr  r4, [r3]
-     ldr  r3, L3 ; 0x0000deff
-     ands r4, r3
-     ldr  r3, L4 ; 0x0000c0de
-     cmp  r4, r3
-     bne  l2
-     ldr  r3, L5 ; 0x76543210
-     ldr  r3, [r3]
-     movs r4, #254
-     lsls r4, r4, #2
-     ands r3, r4
-     beq  l0
-l3:  mov  r0, r3
-     pop  {r4, r5, pc}
-     nop  
+`     push  {r4, r5, r6, r7, lr}
+     ldr   r4, L0 ; 0x12345678
+     ldr   r5, [r4]
+     ldr   r3, L1 ; 0xfffffbdf
+     ands  r5, r3
+     movs  r3, #128
+     lsls  r3, r3, #3
+     orrs  r5, r3
+     str   r5, [r4]
+     movs  r3, #0
+     mvns  r3, r3
+l0:  cmp   r0, r2
+     bhs   l3
+     movs  r3, #16
+l1:  ldmia r1!, {r4, r5, r6, r7}
+     stmia r0!, {r4, r5, r6, r7}
+     subs  r3, r3, #1
+     bne   l1
+l2:  ldr   r3, L2 ; 0x76543210
+     ldr   r4, [r3]
+     ldr   r3, L3 ; 0x0000deff
+     ands  r4, r3
+     ldr   r3, L4 ; 0x0000c0de
+     cmp   r4, r3
+     bne   l2
+     ldr   r3, L5 ; 0x76543210
+     ldr   r3, [r3]
+     movs  r4, #254
+     lsls  r4, r4, #2
+     ands  r3, r4
+     beq   l0
+l3:  mov   r0, r3
+     pop   {r4, r5, r6, r7, pc}
+     nop   
 L0:  0x12345678
 L1:  0xfffffbdf
 L2:  0x76543210

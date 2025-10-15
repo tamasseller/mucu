@@ -95,7 +95,7 @@ export class ProcedurePrinter {
             return `${this.value(op.value)} <- [${this.value(op.base)}, ${op.offset}]`;
         }
         else if (op instanceof LoadWordRegIncrement) {
-            return `${this.value(op.value)} <- [${this.value(op.address)} ++ 4]`;
+            return `${op.values.map(v => this.value(v)).join(", ")} <- [${this.value(op.address)} ++ 4]`;
         }
         else if (op instanceof StoreRegOffset) {
             return `[${this.value(op.base)}, ${this.value(op.offset)}] <- ${this.value(op.value)}`
@@ -104,7 +104,7 @@ export class ProcedurePrinter {
             return `[${this.value(op.base)}, ${op.offset}] <- ${this.value(op.value)}`
         }
         else if (op instanceof StoreWordRegIncrement) {
-            return `[${this.value(op.address)} ++ 4] <- ${this.value(op.value)}`
+            return `[${this.value(op.address)} ++ 4] <- ${op.values.map(v => this.value(v)).join(", ")}`
         }
         else if (op instanceof LiteralIsn) {
             return `$, ${this.value(op.result)} := ${format32(op.value)}`;

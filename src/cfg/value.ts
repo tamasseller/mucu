@@ -4,6 +4,7 @@ import { Operation } from "./basicBlock";
 let idx = 0
 export class Value {
     idx: number;
+    reg: any;
     constructor() {
         this.idx = idx++
     }

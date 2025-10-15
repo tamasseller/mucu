@@ -2,7 +2,7 @@ import Procedure from "./program/procedure";
 import { reversePostOrderBlocks } from "./cfg/traversal";
 import { generateCfg } from "./generic/generateCfg";
 import { propagateCopies, addTransitBindings, retardDefinitions } from "./generic/localPasses";
-import { selectInstructions } from "./specific/machine";
+import { mergeMia, selectInstructions } from "./specific/machine";
 import { breakCriticalEdges, eliminateDumbJumps, foldConstantConditionals, mergeIdenticalPredecessors, mergeBlocks as mergeTrivialEdges, straightenConditionals } from "./generic/factoring";
 import { transformConditional } from "./specific/conditional";
 import { straightenLoops } from "./generic/loops";
@@ -78,7 +78,7 @@ export function compile(ast: Procedure, opts?: CompilerOptions): RelocatableObje
         * that have proper descriptions for the actual register constraints. 
         */
         [selectInstructions, "select instructions"],
-
+        
         /* 
         * Convert branches to an architecture specific conditonal and 
         * possibly add some auxiliary instructions as well to make it work.
@@ -106,6 +106,11 @@ export function compile(ast: Procedure, opts?: CompilerOptions): RelocatableObje
         */
         [allocateRegisters, "allocate registers"],
 
+        /*
+        * Merge subsequent instances of ldmia/stmia instructions where adequate.
+        */
+        [mergeMia, "merge mia"],
+        
         /*
         * Eliminate pointless bbs, made possible by the removal of unnecessary pessimistic moves.
         */
