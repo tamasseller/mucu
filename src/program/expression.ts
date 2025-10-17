@@ -106,9 +106,6 @@ let varIdx = 0
 
 export class Variable extends Expression 
 {
-    decimal(): string | import("./statement").FormattedNumber {
-        throw new Error('Method not implemented.')
-    }   
     constructor(readonly idx = varIdx++) {
         super()
     }
