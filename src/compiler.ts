@@ -11,6 +11,7 @@ import { BasicBlock } from "./cfg/basicBlock";
 import { allocateRegisters } from "./generic/registerAllocation";
 import { ProcedurePrinter } from "./printer";
 import { RelocatableObject } from "./linker";
+import {hoistLiterals} from "./specific/hoistLiterals"
 
 interface CompilerOptions
 {
@@ -28,6 +29,12 @@ export function compile(ast: Procedure, opts?: CompilerOptions): RelocatableObje
 
     for(const pass of 
     [
+        /*
+        * Make literal pool accesses less dumb, by examining the whole block
+        * to find opportunities for pool access deduplication.
+        */
+        [hoistLiterals, "host literals"],
+
         /*
         * Eliminate empty blocks that may appear in odd corner cases during 
         * CFG generation even if the initial AST would not motivate it and 
@@ -171,10 +178,11 @@ export function compile(ast: Procedure, opts?: CompilerOptions): RelocatableObje
     }
 }
 
+// TODO do operator strength reduction (*2 -> <<1, +0, -0, *1, <<0, etc...)
+
 // TODO implement procedure calls
 //      - isn clobber list
 //      - signature abstraction
-//      - relocations?
 //      - invoke isn
 
 // TODO implement spilling
@@ -188,5 +196,3 @@ export function compile(ast: Procedure, opts?: CompilerOptions): RelocatableObje
 // TODO add spilling related missing features
 //      - nonreg arguments/retvals
 //      - frame allocation
-
-// TODO smarten selectInstructions to do actual multireg *mia (copy double-word usecase)

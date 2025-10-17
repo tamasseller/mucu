@@ -78,7 +78,7 @@ export function mapLoadStoreOp(op: LoadOperation | StoreOperation, ignore: Set<O
     /*
     * Check if address value originates from addition
     */
-    if(op.address.isLastUse)    // TODO check that all other uses are immediate offsetable load/stores
+    if(op.address.isLastUse)    // TODO check that all other uses are offsetable load/stores instead
     {
         const root = findNonCopyOrigin(op.address.definition.op)
         if(root instanceof ArithmeticOperation && root.op === Arithmetic.Add && !ignore.has(root))
@@ -87,34 +87,29 @@ export function mapLoadStoreOp(op: LoadOperation | StoreOperation, ignore: Set<O
             const roi = new OpInfo(root.right)
 
             /*
-            * Do not process offset if result is constant (weird?)
+            * Reverse args if better
             */
-            if(loi.val === undefined || roi.val === undefined)
-            {
-                /*
-                * Reverse args if better
-                */
-                const [base, offset] = roi.val !== undefined
-                    ? [loi, roi]
-                    : [roi, loi]
+            const [base, offset] = (loi.val === undefined && roi.val !== undefined)
+                                || (loi.val !== undefined && roi.val !== undefined && roi.val < loi.val)
+                ? [loi, roi]
+                : [roi, loi]
 
-                /*
-                * Check if offset can be specified as immediate
-                */
-                const off = offset.val
-                if(off !== undefined && isLdstrImmOff(off, op.width))
-                {
-                    return op instanceof LoadOperation 
-                        ? [new LoadImmOffset(op.value.value, base.iop.value, off, op.width)]
-                        : [new StoreImmOffset(op.value.value, base.iop.value, off, op.width)]
-                }
-                
-                if(true /* TODO contemplate if this is the right choice livenesswise */)
-                {
-                    return op instanceof LoadOperation 
-                        ? [new LoadRegOffset(op.value.value, base.iop.value, offset.iop.value, op.width)]
-                        : [new StoreRegOffset(op.value.value, base.iop.value, offset.iop.value, op.width)]
-                }
+            /*
+            * Check if offset can be specified as immediate
+            */
+            const off = offset.val
+            if(off !== undefined && isLdstrImmOff(off, op.width))
+            {
+                return op instanceof LoadOperation 
+                    ? [new LoadImmOffset(op.value.value, base.iop.value, off, op.width)]
+                    : [new StoreImmOffset(op.value.value, base.iop.value, off, op.width)]
+            }
+            
+            if(true /* TODO contemplate if this is the right choice livenesswise */)
+            {
+                return op instanceof LoadOperation 
+                    ? [new LoadRegOffset(op.value.value, base.iop.value, offset.iop.value, op.width)]
+                    : [new StoreRegOffset(op.value.value, base.iop.value, offset.iop.value, op.width)]
             }
         }
     }

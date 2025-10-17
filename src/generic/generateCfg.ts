@@ -55,17 +55,6 @@ function expressionValue(expr: Expression): ValueMaterializer
     {
         return cb => 
         {
-            for(const op of cb.opsSoFar)
-            {
-                if((op instanceof LiteralOperation) && op.value === expr.value)
-                {
-                    return {
-                        cb: cb,
-                        value: op.result.value
-                    }
-                }
-            }
-
             const value = new Value();
             cb.add(new LiteralOperation(value, expr.value))
             return { cb: cb, value };

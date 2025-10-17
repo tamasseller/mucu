@@ -35,14 +35,13 @@ test("square", () => {
 test("branch", () => {
 	assert.strictEqual(disassemble(compile(Procedure.build($ => {
 		const [a] = $.args
-		$.branch(a.sub(3), new Constant(123).store(a.mul(69)))
+		$.branch(a.sub(3), new Constant(100).store(a.mul(69), LoadStoreWidth.U1))
 	})).content!),
 `     cmp  r0, #3
      beq  l0
      movs r1, #69
      muls r0, r1
-     movs r1, #123
-     str  r0, [r1]
+     strb r0, [r1, #31]
 l0:  bx   lr`
 )});
 
@@ -95,14 +94,14 @@ l1:  bx   lr`
 test("reality", () => {
 	assert.strictEqual(disassemble(compile(Procedure.build($ => 
 	{
-		const cr = new Constant(0x12345678);
-		const sr = new Constant(0x76543210);
+		const cr = new Constant(0x40023000);
+		const sr = new Constant(0x40023004);
 
 		const [dst, src, end] = $.args;
 		const ret = $.declare(-1)
 
 		$.add(cr.store(cr.load().bitand((~0x420) >>> 0).bitor(0x400))),
-		
+
 		$.loop(dst.lt(end), $ =>
 		{
 			const i = $.declare(16)
@@ -138,16 +137,16 @@ test("reality", () => {
 
 		cr.store(cr.load().bitand((~0x420) >>> 0).bitor(0x020)),
 		$.return(ret)
-	})).content!),
+	}), {dumpCfg: true}).content!),
 `     push  {r4, r5, r6, r7, lr}
-     ldr   r4, L0 ; 0x12345678
-     ldr   r5, [r4]
-     ldr   r3, L1 ; 0xfffffbdf
-     ands  r5, r3
-     movs  r3, #128
-     lsls  r3, r3, #3
-     orrs  r5, r3
-     str   r5, [r4]
+     ldr   r3, L0 ; 0x40023000
+     ldr   r5, [r3]
+     ldr   r4, L1 ; 0xfffffbdf
+     ands  r5, r4
+     movs  r4, #128
+     lsls  r4, r4, #3
+     orrs  r5, r4
+     str   r5, [r3]
      movs  r3, #0
      mvns  r3, r3
 l0:  cmp   r0, r2
@@ -157,15 +156,15 @@ l1:  ldmia r1!, {r4, r5, r6, r7}
      stmia r0!, {r4, r5, r6, r7}
      subs  r3, r3, #1
      bne   l1
-l2:  ldr   r3, L2 ; 0x76543210
-     ldr   r4, [r3]
-     ldr   r3, L3 ; 0x0000deff
+l2:  ldr   r3, L0 ; 0x40023000
+     ldr   r4, [r3, #4]
+     ldr   r3, L2 ; 0x0000deff
      ands  r4, r3
-     ldr   r3, L4 ; 0x0000c0de
+     ldr   r3, L3 ; 0x0000c0de
      cmp   r4, r3
      bne   l2
-     ldr   r3, L5 ; 0x76543210
-     ldr   r3, [r3]
+     ldr   r3, L0 ; 0x40023000
+     ldr   r3, [r3, #4]
      movs  r4, #254
      lsls  r4, r4, #2
      ands  r3, r4
@@ -173,12 +172,10 @@ l2:  ldr   r3, L2 ; 0x76543210
 l3:  mov   r0, r3
      pop   {r4, r5, r6, r7, pc}
      nop   
-L0:  0x12345678
+L0:  0x40023000
 L1:  0xfffffbdf
-L2:  0x76543210
-L3:  0x0000deff
-L4:  0x0000c0de
-L5:  0x76543210`
+L2:  0x0000deff
+L3:  0x0000c0de`
 )})
 
 test("logAndSingle", () => {

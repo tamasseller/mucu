@@ -122,6 +122,24 @@ export class LiteralIsn extends LiteralOperation implements CmIsn
         return [v, shift]
     }
 
+    public static score(val: number)
+    {
+        const inv = (~val) >>> 0;
+
+        if(0 <= inv && inv < 256)
+        {
+            return 2;
+        } 
+        else
+        {
+            const [v, nLsh] = LiteralIsn.unShift(val)
+
+            return(0 <= v && v < 256)
+                    ? (1 + (nLsh === 0 ? 0 : 1))
+                    : 3
+        }
+    }
+
     emit(asm: Assembler) 
     {
         assert(this.result.value instanceof CoreReg)
@@ -1010,7 +1028,7 @@ export class StoreImmOffset extends Operation implements CmIsn
         switch(this.width)
         {
             case LoadStoreWidth.U1:
-                assert(((this.offset & 1) == 0) && this.offset < 32)
+                assert(this.offset < 32)
                 asm.strb(this.value.value.reg, this.base.value.reg, this.offset as Uoff05)
                 break;
             case LoadStoreWidth.U2:

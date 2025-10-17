@@ -1,12 +1,11 @@
 import assert from "assert";
 import { CopyOperation, LiteralOperation, ArithmeticOperation, LoadOperation, StoreOperation, ArgumentOperation, RetvalOperation } from "../generic/operations";
-import { OutputOperand, InputOperand, Value, InOutOperand } from "../cfg/value";
+import { OutputOperand, InputOperand } from "../cfg/value";
 import { BasicBlock, Operation } from "../cfg/basicBlock";
 import { ArgumentPseudoIsn, CopyIsn, LiteralIsn, LoadWordRegIncrement, RetvalPseudoIsn, StoreWordRegIncrement } from "./instructions";
 import { mapLoadStoreOp } from "./loadStore";
 import { mapArithmeticOp } from "./arithmetic";
-import { CfgBuilder, CfgRewriter, CodeBuilder } from "../cfg/cfgBuilder";
-import { subscribe } from "diagnostics_channel";
+import { CfgRewriter, CodeBuilder } from "../cfg/cfgBuilder";
 import { CoreReg } from "./registers";
 
 export class OpInfo

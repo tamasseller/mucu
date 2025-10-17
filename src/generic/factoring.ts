@@ -189,7 +189,6 @@ export function mergeBlocks(entry: BasicBlock): BasicBlock
             }
             else if(term instanceof BranchTermination)
             {
-                // TODO check eliminability 
                 rewriter.reterminate(first, new BranchTermination(term.then, term.owise, term.conditional.copy(valueSubs)))
             }
             else
@@ -215,13 +214,6 @@ export function eliminateDumbJumps(entry: BasicBlock): BasicBlock
         let ret = false;
         rewriter.terminationOf(bb)?.successors.forEach(target => 
         {
-            //  TODO update mechanism:
-            //      - merge (non-empty) blocks if:
-            //          - edge is anticritical (it is the only outgoing & incoming)
-            //          - the only successor has eliminable conditional considering constants available, 
-            //            when coming from the current bb, possibly with a limit on the amount 
-            //            of possible code duplicaiton (e.g. successor is not longer)
-            //
             if(!target.hasOps && target.termination instanceof StraightTermination)
             {
                 rewriter.relink(bb, target, target.termination.next)

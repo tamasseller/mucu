@@ -75,24 +75,39 @@ export class Assembler
     private isns: IsnGenerator[] = [];
     private pool: {label: Label, data: Buffer}[] = [];
 
-    private addIsn16(isn: number) {
-        this.isns.push(t16(() => isn));
+    private addIsn16(isn: number)
+    {
+        this.isns.push(t16(() => isn))
     }
 
-    private addIsn32(isn: number, reloc?: {action: RelocAction, target: Symbol}) {
+    private addIsn32(isn: number, reloc?: {action: RelocAction, target: Symbol})
+    {
         this.isns.push(t32(() => isn, reloc));
     }
 
-    private addData(data: Buffer): Label {
-        const l = new Label();
-        this.pool.push({label: l, data: data});
-        return l;
+    private addData(data: Buffer): Label
+    {
+        const l = new Label()
+        this.pool.push({label: l, data: data})
+        return l
     }
 
-    private addConstant32(c: number): Label {
+    private addConstant32(c: number): Label
+    {
         const b = Buffer.alloc(4)
         b.writeUInt32LE(c)
         return this.addData(b)
+    }
+
+    private findConstant32(c: number): Label | undefined 
+    {
+        for(const p of this.pool)
+        {
+            if(p.data.length === 4 && p.data.readUint32LE() === (c >>> 0))
+            {
+                return p.label
+            }
+        }
     }
 
     public ands =  (dn: armv6.LoReg, m: armv6.LoReg) => this.addIsn16(armv6.fmtReg2(armv6.Reg2Op.AND,  dn.idx, m.idx))
@@ -127,39 +142,49 @@ export class Assembler
         ? armv6.fmtReg2(armv6.Reg2Op.ASR, dn_d.idx, m.idx)
         : armv6.fmtImm5(armv6.Imm5Op.ASR, dn_d.idx, m.idx, imm))
 
-    public cmp = (...args: cmpArgs) => {
-        if(args[1] instanceof armv6.AnyReg) {
+    public cmp = (...args: cmpArgs) =>
+    {
+        if(args[1] instanceof armv6.AnyReg)
+        {
             const [n, m] = args
-            this.addIsn16((n.idx < 8 && m.idx < 8) 
+            this.addIsn16((n.idx < 8 && m.idx < 8)
                 ? armv6.fmtReg2(armv6.Reg2Op.CMP, n.idx, m.idx)
                 : armv6.fmtHiReg(armv6.HiRegOp.CMP, n.idx, m.idx))
-        } else {
+        } 
+        else
+        {
             const [n, imm] = args
             this.addIsn16(armv6.fmtImm8(armv6.Imm8Op.CMP, n.idx, imm))
         }
     }
 
-    public adds = (...args: addsSubsArgs) => {
+    public adds = (...args: addsSubsArgs) =>
+    {
         if(args.length == 3)
         {
             const [d, n, m_imm]: [armv6.LoReg, armv6.LoReg, armv6.LoReg | Imm3] = args
-            this.addIsn16((m_imm instanceof armv6.LoReg) 
+            this.addIsn16((m_imm instanceof armv6.LoReg)
                 ? armv6.fmtReg3(armv6.Reg3Op.ADDREG, d.idx, n.idx, m_imm.idx)
                 : armv6.fmtReg3(armv6.Reg3Op.ADDIMM, d.idx, n.idx, m_imm))
-        } else {
+        } 
+        else
+        {
             const [dn, imm]: [armv6.LoReg, Imm8] = args
             this.addIsn16(armv6.fmtImm8(armv6.Imm8Op.ADD, dn.idx, imm))
         }
     }
 
-    public subs = (...args: addsSubsArgs) => {
+    public subs = (...args: addsSubsArgs) =>
+    {
         if(args.length == 3)
         {
             const [d, n, m_imm]: [armv6.LoReg, armv6.LoReg, armv6.LoReg | Imm3] = args
-            this.addIsn16((m_imm instanceof armv6.LoReg) 
+            this.addIsn16((m_imm instanceof armv6.LoReg)
                 ? armv6.fmtReg3(armv6.Reg3Op.SUBREG, d.idx, n.idx, m_imm.idx)
                 : armv6.fmtReg3(armv6.Reg3Op.SUBIMM, d.idx, n.idx, m_imm))
-        } else {
+        } 
+        else
+        {
             const [dn, imm]: [armv6.LoReg, Imm8] = args
             this.addIsn16(armv6.fmtImm8(armv6.Imm8Op.SUB, dn.idx, imm))
         }
@@ -249,14 +274,16 @@ export class Assembler
         else
         {
             assert(typeof data === "number")
-            label = this.addConstant32(data)
+            
+            label = this.findConstant32(data) ?? this.addConstant32(data)
             op = armv6.Imm8Op.LDR;
         }
 
-        this.isns.push(t16(here => { 
+        this.isns.push(t16(here =>
+        {
             assert(label.offset !== undefined)
-            const wordAlignedPcInOff16 = (here + 2) & ~1;
-            const off = label.offset - wordAlignedPcInOff16;
+            const wordAlignedPcInOff16 = (here + 2) & ~1
+            const off = label.offset - wordAlignedPcInOff16
             assert(0 <= off && off < 512)
             return armv6.fmtImm8(op, n.idx, off >>> 1)
         }))
@@ -264,12 +291,13 @@ export class Assembler
 
     private addCondBranch(cond: armv6.BranchOp, l: Label): Label
     {
-        this.isns.push(t16(here => { 
+        this.isns.push(t16(here =>
+        {
             assert(l.offset !== undefined)
-            const off = l.offset - (here + 2);
+            const off = l.offset - (here + 2)
             assert(-128 <= off && off <= 127)
             assert(-128 <= off && off <= 127)
-            return armv6.fmtBranchSvc(cond, off);
+            return armv6.fmtBranchSvc(cond, off)
         }))
 
         return l
@@ -294,9 +322,10 @@ export class Assembler
 
     public b(l: Label = new Label()): Label
     {       
-        this.isns.push(t16(here => { 
+        this.isns.push(t16(here =>
+        {
             assert(l.offset !== undefined)
-            const off = l.offset - (here + 2);
+            const off = l.offset - (here + 2)
             assert(-2048 <= off && off < 2048)
             return (0b11100_00000000000 >>> 0) | (off & 0x7ff);
         }))

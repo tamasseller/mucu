@@ -78,11 +78,6 @@ export class CodeBuilder
         return 0 < this.ops.length
     }
 
-    get opsSoFar(): Iterable<Operation>
-    {
-        return this.ops;
-    }
-
     getDefinition(value: Value): Operation | undefined
     {
         const oop = this.available.get(value);
