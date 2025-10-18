@@ -36,7 +36,7 @@ test("branch", () => {
 	assert.strictEqual(disassemble(compile(Procedure.build($ => {
 		const [a] = $.args
 		$.branch(a.sub(3), new Constant(100).store(a.mul(69), LoadStoreWidth.U1))
-	})).content!),
+	}), {dumpCfg: true}).content!),
 `     cmp  r0, #3
      beq  l0
      movs r1, #69

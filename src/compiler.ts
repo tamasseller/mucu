@@ -1,7 +1,7 @@
 import Procedure from "./program/procedure";
 import { reversePostOrderBlocks } from "./cfg/traversal";
 import { generateCfg } from "./generic/generateCfg";
-import { propagateCopies, addTransitBindings, retardDefinitions } from "./generic/localPasses";
+import { propagateCopies, addTransitBindings, retardDefinitions, removeIdentyOperations } from "./generic/localPasses";
 import { mergeMia, selectInstructions } from "./specific/machine";
 import { breakCriticalEdges, eliminateDumbJumps, foldConstantConditionals, mergeIdenticalPredecessors, mergeBlocks as mergeTrivialEdges, straightenConditionals } from "./generic/factoring";
 import { transformConditional } from "./specific/conditional";
@@ -29,12 +29,6 @@ export function compile(ast: Procedure, opts?: CompilerOptions): RelocatableObje
 
     for(const pass of 
     [
-        /*
-        * Make literal pool accesses less dumb, by examining the whole block
-        * to find opportunities for pool access deduplication.
-        */
-        [hoistLiterals, "host literals"],
-
         /*
         * Eliminate empty blocks that may appear in odd corner cases during 
         * CFG generation even if the initial AST would not motivate it and 
@@ -71,7 +65,7 @@ export function compile(ast: Procedure, opts?: CompilerOptions): RelocatableObje
         * https://www.cs.princeton.edu/courses/archive/spring16/cos320/lectures/15-SSA.pdf
         */
         [breakCriticalEdges, "break critical edges"],
-
+        
         /*
         * Add pass-throuh input and output definitons to basic blocks,
         * where a variable's value is used in some successor but not 
@@ -79,6 +73,19 @@ export function compile(ast: Procedure, opts?: CompilerOptions): RelocatableObje
         * Also remove unused exports, thus achieving pruned SSA form.
         */
         [addTransitBindings, "add transit bindings"],
+
+        /*
+        * Eliminate operations that do nothing (like add zero, times one, etc...)
+        */
+        [removeIdentyOperations, "remove identy operations"],
+
+        /*
+        * Arrange literals such that pool accesses can be less dumb, by examining the 
+        * whole block in advance to find opportunities for load deduplication. Also weeds
+        * out unnecessary contants from the pool globally, where zero cost synthesis is 
+        * available (e.g.immediate offset load/store)
+        */
+        [hoistLiterals, "host literals"],
 
         /*
         * Substitute generic TAC operations for achitecture specific ones
@@ -177,8 +184,6 @@ export function compile(ast: Procedure, opts?: CompilerOptions): RelocatableObje
         ...code
     }
 }
-
-// TODO do operator strength reduction (*2 -> <<1, +0, -0, *1, <<0, etc...)
 
 // TODO implement procedure calls
 //      - isn clobber list

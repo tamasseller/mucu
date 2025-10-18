@@ -1,10 +1,12 @@
 import { BasicBlock, BranchTermination, Operation } from "../cfg/basicBlock";
 import { Value } from "../cfg/value";
-import { CopyOperation } from "./operations";
+import { ArithmeticOperation, CopyOperation, LiteralOperation } from "./operations";
 import { Variable } from "../program/expression";
 import { CfgRewriter, CodeBuilder } from "../cfg/cfgBuilder";
 import { postOrderBlocks, runWorklistOperation } from "../cfg/traversal";
 import { isDeepStrictEqual } from "util";
+import {Arithmetic} from "./arithmetic"
+import assert from "assert"
 
 export function addTransitBindings(entry: BasicBlock) 
 {
@@ -134,3 +136,107 @@ export function retardDefinitions(entry: BasicBlock): BasicBlock
         return ret;
     })
 }
+
+export function removeIdentyOperations(entry: BasicBlock): BasicBlock
+{
+    return new CfgRewriter().rewrite(entry, bb => 
+    {
+        const ret = new CodeBuilder()
+        ret.recreateImports(bb)
+
+        for(const op of bb.ops)
+        {
+            if(op instanceof ArithmeticOperation)
+            {
+                const res = op.result.value
+                const cval = op.constValue()
+
+                if(cval !== undefined)
+                {
+                    ret.add(new LiteralOperation(res, cval))
+                }
+                else
+                {
+                    switch(op.op)
+                    {
+                    case Arithmetic.Add:
+                        ret.add(
+                            op.left.constValue() === 0
+                                ? new CopyOperation(res, op.right.value)
+                                : op.right.constValue() === 0
+                                    ? new CopyOperation(res, op.left.value)
+                                    : op.copy()
+                        )
+                        break;
+                    case Arithmetic.Sub:
+                        ret.add(
+                            op.right.constValue() === 0
+                                ? new CopyOperation(res, op.left.value)
+                                : op.copy()
+                        )
+                        break;
+                    case Arithmetic.Mul:
+                        ret.add(
+                            op.left.constValue() === 0 || op.right.constValue() === 0
+                                ? new LiteralOperation(res, 0)
+                                : op.left.constValue() === 1
+                                    ? new CopyOperation(res, op.right.value)
+                                    : op.right.constValue() === 1
+                                        ? new CopyOperation(res, op.left.value)
+                                        : op.copy()
+                        )
+                        break;
+                    case Arithmetic.Shl:
+                    case Arithmetic.Shr:
+                        ret.add(
+                            op.right.constValue() === 0
+                                ? new CopyOperation(res, op.left.value)
+                                : op.copy()
+                        )
+                        break;
+                    case Arithmetic.BitAnd:
+                        ret.add(
+                            op.left.constValue() === 0 || op.right.constValue() === 0
+                                ? new LiteralOperation(res, 0)
+                                : op.left.constValue() === 0xffffffff
+                                    ? new CopyOperation(res, op.right.value)
+                                    : op.right.constValue() === 0xffffffff
+                                        ? new CopyOperation(res, op.left.value)
+                                        : op.copy()
+                        )
+                        break;
+                    case Arithmetic.BitOr:
+                        ret.add(
+                            op.left.constValue() === 0xffffffff || op.right.constValue() === 0xffffffff
+                                ? new LiteralOperation(res, 0xffffffff)
+                                : op.left.constValue() === 0
+                                    ? new CopyOperation(res, op.right.value)
+                                    : op.right.constValue() === 0
+                                        ? new CopyOperation(res, op.left.value)
+                                        : op.copy()
+                        )
+                        break;
+                    default :
+                        assert(op.op === Arithmetic.BitXor)
+                        ret.add(
+                            op.left.constValue() === 0
+                                ? new CopyOperation(res, op.right.value)
+                                : op.right.constValue() === 0
+                                    ? new CopyOperation(res, op.left.value)
+                                    : op.copy()
+                        )
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                ret.add(op.copy())
+            }
+        }
+
+        ret.recreateExports(bb)
+        return ret;
+    })
+}
+        
