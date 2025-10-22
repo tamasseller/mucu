@@ -1,3 +1,4 @@
+import assert from "assert"
 import { BasicBlock } from "../cfg/basicBlock"
 import { traverseDfs } from "../cfg/traversal"
 import { InputOperand, Operand, OutputOperand, Value } from "../cfg/value"
@@ -18,6 +19,11 @@ export function constructInterferenceGraph(precolored: Value[], entry: BasicBloc
         const [n, m] = [nodes.get(u), nodes.get(v)]
         n.interferers.add(m)
         m.interferers.add(n)
+
+        if(n.movePartners.delete(m))
+        {
+            assert(m.movePartners.delete(n))
+        }
     }
 
     const ensureNode = (v: Value, prio: number) => 
@@ -33,20 +39,6 @@ export function constructInterferenceGraph(precolored: Value[], entry: BasicBloc
         }
     }
 
-    const handleOp = (op: Operand, prio: number) =>
-    {
-        ensureNode(op.value, prio)
-
-        if(op.additionalInterference)
-        {
-            for(const a of op.additionalInterference)
-            {
-                ensureNode(a, 0)
-                addSymmetricInterference(op.value, a)
-            }
-        }
-    }
-
     for (const bb of traverseDfs(entry)) 
     {
         const prio = loopInfo.find(bb)?.depth ?? 0
@@ -54,24 +46,39 @@ export function constructInterferenceGraph(precolored: Value[], entry: BasicBloc
 
         const addLive = (iop: InputOperand) => 
         {
-            handleOp(iop, prio)
-
-            if(!live.has(iop.value))
+            if(!iop.noAlloc)
             {
-                for(const l of live)
-                {
-                    addSymmetricInterference(l, iop.value)
-                }
+                ensureNode(iop.value, prio)
 
-                live.add(iop.value)
+                if(!live.has(iop.value))
+                {
+                    for(const l of live)
+                    {
+                        addSymmetricInterference(l, iop.value)
+                    }
+
+                    live.add(iop.value)
+                }
             }
         }
 
         const removeLive = (iop: OutputOperand) => 
         {
-            handleOp(iop, prio)
+            if(!iop.noAlloc)
+            {
+                ensureNode(iop.value, prio)
 
-            live.delete(iop.value)
+                if(!live.has(iop.value))
+                {
+                    /* unused values still must be accounted for interference-wise */
+                    for(const l of live)
+                    {
+                        addSymmetricInterference(l, iop.value)
+                    }
+                }
+
+                live.delete(iop.value)
+            }
         }
 
         Iterator.from(bb.outputs).forEach(addLive)
@@ -84,13 +91,34 @@ export function constructInterferenceGraph(precolored: Value[], entry: BasicBloc
             if(op instanceof CopyOperation && op.source.isLastUse)
             {
                 const [d, s] = [nodes.get(op.destination.value), nodes.get(op.source.value)]
-                d.movePartners.add(s)
-                s.movePartners.add(d)
+
+                if(d.interferers.has(s))
+                {
+                    assert(s.interferers.has(d))
+                }
+                else
+                {
+                    d.movePartners.add(s)
+                    s.movePartners.add(d)
+                }
             }
         }
         
         bb.used.values().forEach(removeLive);
+        assert(live.size == 0)
     }
 
     return new Set(nodes.values())
+}
+
+export function dumpInterferenceGraph(interference: Iterable<AllocationNode>)
+{
+    const vals = (n: AllocationNode) => [...n.values.values().map(i => `${i.idx}`)].join(", ")
+
+    for(const n of interference)
+    {
+        console.log(`${vals(n)}: `
+            + `${[...n.interferers.values().map(i => `(${vals(i)})`)].join(", ")} | `
+            + `{${[...n.movePartners.values().map(i => `(${vals(i)})`)].join(", ")}}`)
+    }
 }

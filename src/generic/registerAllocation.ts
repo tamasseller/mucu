@@ -1,66 +1,15 @@
 import { BasicBlock } from "../cfg/basicBlock"
 import { lowRegs } from "../specific/registers"
-import { AllocationNode, color } from "./coloring"
+import { color } from "./coloring"
 import { bindPhis } from "./ssa"
 import { CopyOperation } from "./operations"
-import { constructInterferenceGraph } from "./interference"
+import { constructInterferenceGraph, dumpInterferenceGraph } from "./interference"
 import { CfgRewriter, CodeBuilder } from "../cfg/cfgBuilder"
-import assert from "node:assert"
-import { Value } from "../cfg/value"
 import { ProcedurePrinter } from "../printer"
+import {OutputOperand} from "../cfg/value"
+import assert from "assert"
 
-const dumpColoring = false
-
-function dotDump(clone: Iterable<AllocationNode>, colors: Map<Value, Value>)
-{
-    console.log("graph G {")
-    console.log("\tnode [colorscheme=set28]")
-
-    for(const n of clone)
-    {
-        const [v] = n.values
-        const assigned = colors.get(v)?.idx
-        const c = assigned !== undefined ? `fillcolor=${assigned + 1}` : `fillcolor=black fontcolor=${v.idx+1}`
-        console.log(`\t${v.idx}[label="${[...n.values.values().map(v => v?.idx)].join(", ")}" ${c} style=filled]`)
-    }
-
-    for(const n of clone)
-    {
-        const [v] = n.values
-
-        for(const i of n.interferers)
-        {
-            const [u] = i.values
-            console.log(`${v.idx} -- ${u.idx}`)
-        }
-
-        for(const m of n.movePartners)
-        {
-            const [u] = m.values
-            console.log(`${v.idx} -- ${u.idx}[style=dashed color=grey]`)
-        }
-    }
-
-    console.log("}")
-}
-
-function cloneIg(interference: Iterable<AllocationNode>): Iterable<AllocationNode>
-{
-    const clone = new Map(Iterator.from(interference).map(n => {
-        assert(n.values.size === 1)
-        const [v] = n.values.values()
-        return [n, new AllocationNode(v, n.priority)]
-    }))
-
-    clone.entries().forEach(([old, c]) => {
-        c.interferers = new Set(old.interferers.values().map(x => clone.get(x)))
-        c.movePartners = new Set(old.movePartners.values().map(x => clone.get(x)))
-    })
-
-    return clone.values()
-}
-
-export function allocateRegisters(entry: BasicBlock): BasicBlock
+export function allocateRegisters(entry: BasicBlock, dumpColoring = false): BasicBlock
 {
     while(true)
     {
@@ -91,36 +40,59 @@ export function allocateRegisters(entry: BasicBlock): BasicBlock
         */
         const bound = bindPhis(entry)
 
-        // console.log(ProcedurePrinter.print(bound))
+        if(dumpColoring) console.log(ProcedurePrinter.print(bound))
 
         const interference = constructInterferenceGraph(lowRegs, bound)
-        
-        const clone = dumpColoring ? cloneIg(interference) : undefined
 
-        const colors = color(lowRegs, interference)
+        if(dumpColoring) dumpInterferenceGraph(interference)
 
-        if(dumpColoring) dotDump(clone, colors)
+        const colors = color(lowRegs, interference, dumpColoring)
 
         // if(colors instanceof Success)
         {
             const rewriter = new CfgRewriter()
-            return rewriter.rewrite(bound, bb => CodeBuilder.recreate(bb, 
-                op => {
+            return rewriter.rewrite(bound, bb => 
+            {
+                const cb = new CodeBuilder()
+
+                cb.recreateImports(bb, v => colors.get(v) ?? v)
+                
+                for(const op of bb.ops) 
+                {
                     if(op instanceof CopyOperation)
                     {
                         const cSrc = colors.get(op.source.value)
                         const cDst = colors.get(op.destination.value)
-                        if(cSrc == cDst)
+                        if(cSrc == cDst) continue
+
+                        const destDef = cb.getDefiningOperand(cDst)
+                        if(destDef !== undefined)
                         {
-                            return[]
+                            let skip = false
+                            for(let s = cb.getDefiningOperand(cSrc); ; s = s.op.source.definition)
+                            {
+                                assert(s !== undefined)
+
+                                if(s === destDef)
+                                {
+                                    skip = true
+                                    break
+                                }
+
+                                if(!(s?.op instanceof CopyOperation)) break;
+                            }
+
+                            if(skip) continue
                         }
                     }
 
-                    return [op.copy(colors)]
-                },
-                v => colors.get(v) ?? v,
-                v => colors.get(v) ?? v,
-            ))
+                    cb.add(op.copy(colors))
+                }
+
+                cb.recreateExports(bb, v => colors.get(v) ?? v)
+
+                return cb;
+            })
         }
         // else
         {

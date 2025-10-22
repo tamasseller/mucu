@@ -2,6 +2,7 @@ import { LoadStoreWidth } from "../program/common";
 import { Arithmetic, arithmeticEval } from "./arithmetic";
 import { Conditional, Operation } from "../cfg/basicBlock";
 import { InputOperand, OutputOperand, Value } from "../cfg/value";
+import Procedure from "../program/procedure"
 
 export const enum Relation
 {
@@ -116,6 +117,47 @@ export class RetvalOperation extends Operation
         return other instanceof RetvalOperation 
             && other.idx === this.idx
             && other.value.value === this.value.value
+    }
+}
+
+export class InvocationOperation extends Operation 
+{
+    readonly args: InputOperand[]
+    readonly retvals: OutputOperand[]
+
+    constructor(
+        readonly callee: Procedure,
+        argsFrom: Value[],
+        retvalsTo: Value[],
+    ) {
+        super();
+
+        this.args = argsFrom.map(a => new InputOperand(this, a))
+        this.retvals = retvalsTo.map(r => new OutputOperand(this, r))
+    }
+
+    override get hasSideEffect(): boolean { return true }
+
+    get inputs() { return this.args }
+    get outputs() { return this.retvals }
+
+    copy(subs?: Map<Value, Value>): Operation
+    {
+        return new InvocationOperation(
+            this.callee,
+            this.args.map(io => subs?.get(io.value) ?? io.value),
+            this.retvals.map(oo => subs?.get(oo.value) ?? oo.value),
+        )
+    }
+
+    isIdentical(other: Operation): boolean
+    {
+        return other instanceof InvocationOperation
+            && other.callee === this.callee
+            && other.args.length === this.args.length 
+            && other.args.every((v, idx) => v.value === this.args[idx].value)
+            && other.retvals.length === this.retvals.length 
+            && other.retvals.every((v, idx) => v.value === this.retvals[idx].value)
     }
 }
 

@@ -1,10 +1,9 @@
 import assert from "assert"
 import { BasicBlock, BranchTermination, StraightTermination } from "../cfg/basicBlock"
-import { Value } from "../cfg/value"
 import { LoReg, lr } from "./armv6"
-import { calleeSaved, CoreReg, flagsReg, lowRegs } from "./registers"
+import { CoreReg, flagsReg, lowRegs } from "./registers"
 import { Assembler, Label, Uoff27 } from "./assembler"
-import { CmConditional, CmIsn } from "./instructions"
+import { CmConditional, CmIsn, ProcedureCallIsn } from "./instructions"
 import { Relocation } from "../linker"
 
 function collectCalleeSaves(bbs: BasicBlock[]): LoReg[] | undefined
@@ -16,7 +15,7 @@ function collectCalleeSaves(bbs: BasicBlock[]): LoReg[] | undefined
     {
         for(const op of bb.ops)
         {
-            // TODO if(op isntanceof InvokeProcedure) pushLrPopPc = true
+            if(op instanceof ProcedureCallIsn) pushLrPopPc = true
 
             for(const operand of [...op.inputs, ...op.outputs])
             {

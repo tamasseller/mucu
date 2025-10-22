@@ -180,6 +180,8 @@ export const enum SYSm
     CONTROL = 0b00010_100
 };
 
+export const b = 0b11100_00000000000;
+
 export const fmtReg2 = (op: Reg2Op, dn: number, m: number): number => op | (m << 3) | dn;
 export const fmtReg3 = (op: Reg3Op, dt: number, n: number, m: number): number => op | (m << 6) | (n << 3) | dt;
 export const fmtImm5 = (op: Imm5Op, dt: number, mn: number, imm5: number): number => op | (imm5 << 6) | (mn << 3) | dt;
@@ -192,11 +194,13 @@ export const fmtHiReg = (op: HiRegOp, dn: number, m: number): number => op | ((d
 export const fmtPushPop = (popNpush: boolean, includeExtra: boolean, regFlags: number): number => 
     0b1011_0_10_0_00000000 | (popNpush ? (1 << 11) : 0) | (includeExtra ? (1 << 8) : 0) | regFlags;
 
-export const lsMia = (loadNstore: boolean, n: number, regFlags: number): number => 
+export const fmtLsMia = (loadNstore: boolean, n: number, regFlags: number): number => 
     0b11000_00000000000 | (loadNstore ? (1 << 11) : 0) | (n << 8) | regFlags;
 
-export const fmtMsr = (sys: number, n: number): number => WideOps.MSR | (n << 16) | (sys);
-export const fmtMrs = (d: number, sys: number): number => WideOps.MRS | (d << 8) | (sys);
+export const fmtB = (off: number) => (b >>> 0) | (off & 0x7ff)
+
+export const fmtMsr = (sys: number, n: number): number => (WideOps.MSR | (n << 16) | (sys)) >>> 0;
+export const fmtMrs = (d: number, sys: number): number => (WideOps.MRS | (d << 8) | (sys)) >>> 0;
 
 export const fmtBl = (off: number): number => 
 {
@@ -213,6 +217,5 @@ export const fmtBl = (off: number): number =>
     const J1 = I1 ^ S ^ 1;
     const J2 = I2 ^ S ^ 1;
 
-    return WideOps.BL | (S << 26) | (imm10 << 16) | (J1 << 13) | (J2 << 11) | imm11;
+    return (WideOps.BL | (S << 26) | (imm10 << 16) | (J1 << 13) | (J2 << 11) | imm11) >>> 0;
 };
-

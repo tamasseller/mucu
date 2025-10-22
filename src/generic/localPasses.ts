@@ -7,6 +7,7 @@ import { postOrderBlocks, runWorklistOperation } from "../cfg/traversal";
 import { isDeepStrictEqual } from "util";
 import {Arithmetic} from "./arithmetic"
 import assert from "assert"
+import {CoreReg} from "../specific/registers"
 
 export function addTransitBindings(entry: BasicBlock) 
 {
@@ -68,7 +69,7 @@ export function propagateCopies(entry: BasicBlock): BasicBlock
 
         for(const op of bb.ops)
         {
-            if(op instanceof CopyOperation && op.source.isLastUse)
+            if(op instanceof CopyOperation && op.source.isLastUse && !(op.destination.value instanceof CoreReg))
             {
                 let src = op.source.value
 
@@ -137,7 +138,22 @@ export function retardDefinitions(entry: BasicBlock): BasicBlock
     })
 }
 
-export function removeIdentyOperations(entry: BasicBlock): BasicBlock
+const isPowerOfTwo = (n: number | undefined) => n > 0 && (n & (n - 1)) === 0
+
+function log2floor(x: number): number
+{
+    let res = -1
+
+    while(x > 0)
+    {
+        res++
+        x = x >> 1
+    }
+
+    return res
+}
+
+export function optimizeDataProcessing(entry: BasicBlock): BasicBlock
 {
     return new CfgRewriter().rewrite(entry, bb => 
     {
@@ -157,75 +173,82 @@ export function removeIdentyOperations(entry: BasicBlock): BasicBlock
                 }
                 else
                 {
+                    const l = op.left.constValue()
+                    const r = op.right.constValue()
                     switch(op.op)
                     {
-                    case Arithmetic.Add:
-                        ret.add(
-                            op.left.constValue() === 0
-                                ? new CopyOperation(res, op.right.value)
-                                : op.right.constValue() === 0
-                                    ? new CopyOperation(res, op.left.value)
+                        case Arithmetic.Add:
+                            ret.add(
+                                l === 0 ? new CopyOperation(res, op.right.value)
+                                : r === 0 ? new CopyOperation(res, op.left.value)
                                     : op.copy()
-                        )
-                        break;
-                    case Arithmetic.Sub:
-                        ret.add(
-                            op.right.constValue() === 0
-                                ? new CopyOperation(res, op.left.value)
-                                : op.copy()
-                        )
-                        break;
-                    case Arithmetic.Mul:
-                        ret.add(
-                            op.left.constValue() === 0 || op.right.constValue() === 0
-                                ? new LiteralOperation(res, 0)
-                                : op.left.constValue() === 1
-                                    ? new CopyOperation(res, op.right.value)
-                                    : op.right.constValue() === 1
-                                        ? new CopyOperation(res, op.left.value)
-                                        : op.copy()
-                        )
-                        break;
-                    case Arithmetic.Shl:
-                    case Arithmetic.Shr:
-                        ret.add(
-                            op.right.constValue() === 0
-                                ? new CopyOperation(res, op.left.value)
-                                : op.copy()
-                        )
-                        break;
-                    case Arithmetic.BitAnd:
-                        ret.add(
-                            op.left.constValue() === 0 || op.right.constValue() === 0
-                                ? new LiteralOperation(res, 0)
-                                : op.left.constValue() === 0xffffffff
-                                    ? new CopyOperation(res, op.right.value)
-                                    : op.right.constValue() === 0xffffffff
-                                        ? new CopyOperation(res, op.left.value)
-                                        : op.copy()
-                        )
-                        break;
-                    case Arithmetic.BitOr:
-                        ret.add(
-                            op.left.constValue() === 0xffffffff || op.right.constValue() === 0xffffffff
-                                ? new LiteralOperation(res, 0xffffffff)
-                                : op.left.constValue() === 0
-                                    ? new CopyOperation(res, op.right.value)
-                                    : op.right.constValue() === 0
-                                        ? new CopyOperation(res, op.left.value)
-                                        : op.copy()
-                        )
-                        break;
-                    default :
-                        assert(op.op === Arithmetic.BitXor)
-                        ret.add(
-                            op.left.constValue() === 0
-                                ? new CopyOperation(res, op.right.value)
-                                : op.right.constValue() === 0
-                                    ? new CopyOperation(res, op.left.value)
+                            )
+                            break
+                        case Arithmetic.Sub:
+                            ret.add(
+                                r === 0 ? new CopyOperation(res, op.left.value)
                                     : op.copy()
-                        )
-                        break;
+                            )
+                            break
+                        case Arithmetic.Mul:
+                            if(l === 0 || r === 0)
+                            {
+                                ret.add(new LiteralOperation(res, 0))
+                            }
+                            else if(l === 1)
+                            {
+                                ret.add(new CopyOperation(res, op.right.value))
+                            }
+                            else if(r === 1)
+                            {
+                                ret.add(new CopyOperation(res, op.left.value))
+                            }
+                            else if(isPowerOfTwo(l))
+                            {
+                                const imm = new Value()
+                                ret.add(new LiteralOperation(imm, log2floor(l)))
+                                ret.add(new ArithmeticOperation(res, op.right.value, imm, Arithmetic.Shl))
+                            }
+                            else if(isPowerOfTwo(r))
+                            {
+                                const imm = new Value()
+                                ret.add(new LiteralOperation(imm, log2floor(r)))
+                                ret.add(new ArithmeticOperation(res, op.left.value, imm, Arithmetic.Shl))
+                            }
+                            else
+                            {
+                                ret.add(op.copy())
+                            }
+
+                            break
+                        case Arithmetic.Shl:
+                        case Arithmetic.Shr:
+                            ret.add(r === 0 ? new CopyOperation(res, op.left.value) : op.copy())
+                            break
+                        case Arithmetic.BitAnd:
+                            ret.add(
+                                l === 0 || r === 0 ? new LiteralOperation(res, 0)
+                                : l === 0xffffffff ? new CopyOperation(res, op.right.value)
+                                : r === 0xffffffff ? new CopyOperation(res, op.left.value)
+                                    : op.copy()
+                            )
+                            break
+                        case Arithmetic.BitOr:
+                            ret.add(
+                                l === 0xffffffff || r === 0xffffffff ? new LiteralOperation(res, 0xffffffff)
+                                : l === 0 ? new CopyOperation(res, op.right.value)
+                                : r === 0 ? new CopyOperation(res, op.left.value)
+                                    : op.copy()
+                            )
+                            break
+                        default:
+                            assert(op.op === Arithmetic.BitXor)
+                            ret.add(
+                                l === 0 ? new CopyOperation(res, op.right.value)
+                                : r === 0 ? new CopyOperation(res, op.left.value)
+                                    : op.copy()
+                            )
+                            break
                     }
                 }
             }
@@ -239,4 +262,26 @@ export function removeIdentyOperations(entry: BasicBlock): BasicBlock
         return ret;
     })
 }
-        
+
+export function removeUnused(entry: BasicBlock): BasicBlock
+{
+    while(true)
+    {
+        let changed = false
+
+        entry = new CfgRewriter().rewrite(entry, bb => CodeBuilder.recreate(bb, op => 
+        {
+            if(!op.hasSideEffect && op.outputs.every(op => op.uses.length === 0))
+            {
+                changed = true;
+                return []
+            }
+
+            return [op.copy()]
+        }))
+
+        if(!changed) break
+    }
+
+    return entry
+}

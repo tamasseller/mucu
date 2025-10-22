@@ -64,10 +64,12 @@ export function thumbBlReloc(isn: Buffer, selfAddr: number, targetAddr: number)
     assert((selfAddr & 1) == 0)
     assert((targetAddr & 1) == 0)
 
-    const off = (selfAddr >>> 1) - ((targetAddr >>> 1) + 2);
+    const off = (targetAddr >>> 1) - ((selfAddr >>> 1) + 2);
 
     assert(-8388608 <= off && off <= 8388607)
-    isn.writeUint32LE(armv6.fmtBl(off))
+    const raw = armv6.fmtBl(off)
+    isn.writeUint16LE(raw >>> 16)
+    isn.writeUint16LE(raw & 0xffff, 2)
 }
 
 export class Assembler
@@ -240,8 +242,8 @@ export class Assembler
     public pop        = (l: LoRegs) => this.addIsn16(armv6.fmtPushPop(true,  false, this.loRegFlags(l)))
     public popWithPc  = (l: LoRegs) => this.addIsn16(armv6.fmtPushPop(true,  true,  this.loRegFlags(l)))
 
-    public stmia = (n: armv6.LoReg, l: LoRegs) => this.addIsn16(armv6.lsMia(false, n.idx, this.loRegFlags(l)))
-    public ldmia = (n: armv6.LoReg, l: LoRegs) => this.addIsn16(armv6.lsMia(true,  n.idx, this.loRegFlags(l)))
+    public stmia = (n: armv6.LoReg, l: LoRegs) => this.addIsn16(armv6.fmtLsMia(false, n.idx, this.loRegFlags(l)))
+    public ldmia = (n: armv6.LoReg, l: LoRegs) => this.addIsn16(armv6.fmtLsMia(true,  n.idx, this.loRegFlags(l)))
 
     public udf =   (off: Imm8) => this.addIsn16(armv6.fmtBranchSvc(armv6.BranchOp.UDF, off))
     public svc =   (imm: Imm8) => this.addIsn16(armv6.fmtBranchSvc(armv6.BranchOp.SVC, imm))
@@ -327,7 +329,7 @@ export class Assembler
             assert(l.offset !== undefined)
             const off = l.offset - (here + 2)
             assert(-2048 <= off && off < 2048)
-            return (0b11100_00000000000 >>> 0) | (off & 0x7ff);
+            return armv6.fmtB(off);
         }))
 
         return l;
@@ -340,7 +342,7 @@ export class Assembler
     public msr = (sys: armv6.SYSm, n: armv6.AnyReg) => this.addIsn32(armv6.fmtMsr(sys, n.idx))
     public mrs = (d: armv6.AnyReg, sys: armv6.SYSm) => this.addIsn32(armv6.fmtMrs(d.idx, sys))
 
-    public bl = (callee: Procedure): void => this.addIsn32(armv6.fmtBl(0), 
+    public bl = (callee: Procedure): void => this.addIsn32(armv6.fmtBl(-2), 
     {
         target: callee,
         action: thumbBlReloc
@@ -381,19 +383,20 @@ export class Assembler
                 relocations.push({...isn.reloc, offset: offset * 2})
             }
 
+            const raw = isn.gen(offset)
             if(isn.width === 1)
             {
-                content.writeUInt16LE(isn.gen(offset) >>> 0, 2 * offset);
-                offset++
+                content.writeUInt16LE(raw >>> 0, 2 * offset++)
             }
             else
             {
                 assert(isn.width === 2)
-                content.writeUInt32LE(isn.gen(offset) >>> 0, 2 * offset);
-                offset += 2
+                content.writeUInt16LE(raw >>> 16, 2 * offset++)
+                content.writeUInt16LE(raw & 0xffff, 2 * offset++)
             }
         }
 
         return {content, relocations};
     }
 }
+

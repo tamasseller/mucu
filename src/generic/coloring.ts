@@ -1,9 +1,7 @@
 import assert from "assert"
 import { Value } from "../cfg/value"
 
-const debug = false
-
-const log = !debug ? () => {} : (str) => console.log(str)
+const debug = true
 
 const validateNodeList = !debug ? () => {} : (nodes: Set<AllocationNode>) =>
 {
@@ -125,7 +123,7 @@ export class AllocationNode
     }
 }
 
-function reduce(precolored: Set<Value>, nodes: Set<AllocationNode>): AllocationNode[]
+function reduce(precolored: Set<Value>, nodes: Set<AllocationNode>, log: (str: any) => void): AllocationNode[]
 {
     const stack: AllocationNode[] = []
 
@@ -138,17 +136,19 @@ function reduce(precolored: Set<Value>, nodes: Set<AllocationNode>): AllocationN
         const nodesOfLowDegree = [...nodes.values().filter(node => node.degree < k)].toSorted((a, b) => b.priority - a.priority)
 
         let simplified = false;
-        for(const n of nodesOfLowDegree)
         {
-            if(!n.moveRelated && n.values.isDisjointFrom(precolored))
+            const [first, ...rest] = nodesOfLowDegree.filter(n => !n.moveRelated && n.values.isDisjointFrom(precolored))
+
+            if(first !== undefined)
             {
+                const n = rest.reduce((a, b) => a.priority <= b.priority ? a : b, first)
+
                 log(`simplify ${strNode(n)}`)
 
                 n.disconnectInterference()
                 stack.push(n)
                 nodes.delete(n)
-                simplified = true;
-                break
+                simplified = true
             }
         }
 
@@ -174,7 +174,7 @@ function reduce(precolored: Set<Value>, nodes: Set<AllocationNode>): AllocationN
 
             if(first !== undefined)
             {
-                const b = rest.reduce((a, b) => a.priority < b.priority ? b : a, first)
+                const b = rest.reduce((a, b) => a.priority <= b.priority ? a : b, first)
                 log(`coalesce ${strNode(a)} <-> ${strNode(b)}`)
 
                 a.coalesce(b)
@@ -218,18 +218,21 @@ function reduce(precolored: Set<Value>, nodes: Set<AllocationNode>): AllocationN
         }
     }
 
-    return stack
+    return [...stack, ...nodes.values()]
 }
 
 /*
  * Chaitin-style graph-coloring, with conservative coalescing due to Briggs et al.
  */
 export function color(
-    precolored: Value[],
-    nodes: Iterable<AllocationNode>
+    precolored: Value[], 
+    nodes: Iterable<AllocationNode>, 
+    dump: boolean
 ): Map<Value, Value>
 {
-    const stack = reduce(new Set(precolored), new Set(nodes))  
+    const log = !dump ? () => {} : (str) => console.log(str)
+
+    const stack = reduce(new Set(precolored), new Set(nodes), log)  
 
     const colors = new Map<Value, number>(precolored.map((p, idx) => [p, idx]));
 
@@ -242,42 +245,57 @@ export function color(
             break;
         }
 
-        const forbidden = new Set<number>(next.interferers.values().map(n => {
-            const cs = n.values.values().map(v => colors.get(v));
-            const [first, ...rest] = cs;
-            assert(rest.every(c => c == first))
-            return first;
-        }))
+        const [precolor, ...err] = next.values.values().map(v => colors.get(v)).filter(c => c !== undefined)
+        assert(err.length === 0)
 
-        let color = 0
-
-        if(forbidden.size)
+        if(precolor !== undefined)
         {
-            const [from, to] = [Math.min(...forbidden), Math.max(...forbidden)]
+            log(`precolored ${precolor} -> ${strNode(next)}`)
 
-            if(from == 0)
+            for(const v of next.values)
             {
-                color = to + 1
+                if(v !== precolored[precolor]) colors.set(v, precolor)
+            }
+        }
+        else
+        {
+            const forbidden = new Set<number>(next.interferers.values().map(n => {
+                const cs = n.values.values().map(v => colors.get(v)).filter(c => c !== undefined);
+                const [first, ...rest] = cs;
+                assert(rest.every(c => c == first))
+                return first;
+            }))
 
-                if(forbidden.size <= to)
+            let color = 0
+
+            if(forbidden.size)
+            {
+                const [from, to] = [Math.min(...forbidden), Math.max(...forbidden)]
+
+                if(from == 0)
                 {
-                    for(let i = 1; i < to; i++)
+                    color = to + 1
+
+                    if(forbidden.size <= to)
                     {
-                        if(!forbidden.has(i))
+                        for(let i = 1; i < to; i++)
                         {
-                            color = i
-                            break;
+                            if(!forbidden.has(i))
+                            {
+                                color = i
+                                break;
+                            }
                         }
                     }
                 }
             }
-        }
 
-        log(`color ${color} -> ${strNode(next)}`)
+            log(`color ${color} -> ${strNode(next)}`)
 
-        for(const v of next.values)
-        {
-            colors.set(v, color)
+            for(const v of next.values)
+            {
+                colors.set(v, color)
+            }
         }
     }
 

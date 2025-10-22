@@ -3,7 +3,7 @@ import Procedure from "../src/program/procedure";
 import { compile } from "../src/compiler";
 import { disassemble } from "../src/specific/disassembler";
 import assert from "assert";
-import { Executable, link, RelocatableObject } from "../src/linker";
+import { Executable, Fragment, link, RelocatableObject, SymInfo } from "../src/linker";
 import { Block, Branch, Call, Loop, Statement } from "../src/program/statement";
 import { sign } from "crypto";
 
@@ -71,6 +71,15 @@ function build(
     }])
 }
 
+function cutBySymbol(f: Fragment, sym: SymInfo): Fragment
+{
+    const off = sym.address - f.address
+    return {
+        content: f.content.subarray(off, off + sym.size),
+        address: sym.address
+    }
+}
+
 suite("linker", {}, () => 
 {
 //     test("passThrough", () => 
@@ -101,6 +110,12 @@ suite("linker", {}, () =>
             $.return(x.mul(x))
         })
 
+        const cf = compile(f)
+
+        assert.deepStrictEqual(disassemble(cf),
+`     muls r0, r0
+     bx   lr`)
+
         const g = Procedure.build($ => {
             const [x, y] = $.args
             const [xsq] = $.call(f, x)
@@ -108,17 +123,41 @@ suite("linker", {}, () =>
             $.return(xsq.add(ysq))
         })
 
-        const img = link(f, [{startAddress: 0x2000_0000, objects: [compile(f), compile(g)]}])
+        const cg = compile(g)
+
+        assert.deepStrictEqual(disassemble(cg),
+`     push {r4, r5, lr}
+     mov  r4, r1
+     bl   0x00000004 # relocation
+     mov  r5, r0
+     mov  r0, r4
+     bl   0x0000000c # relocation
+     adds r0, r5, r0
+     pop  {r4, r5, pc}`)
+
+        const img = link(g, [{startAddress: 0x2000_0000, objects: [cg, cf]}])
 
         assert.deepStrictEqual(img.fragments.length, 1)
         assert.deepStrictEqual(img.fragments[0].address, 0x2000_0000)
-        assert.deepStrictEqual(img.entry, img.fragments[0].address)
-        assert.deepStrictEqual(img.symbols.size, 1)
-        assert.deepStrictEqual(img.symbols.get(f), img.entry)
+        assert.deepStrictEqual(img.entry, 0x2000_0000)
+        assert.deepStrictEqual(img.symbols.size, 2)
+        assert.deepStrictEqual(img.symbols.get(g)!.address, 0x2000_0000)
+        assert.deepStrictEqual(img.symbols.get(g)!.size, 20)
+        assert.deepStrictEqual(img.symbols.get(f)!.address, 0x2000_0014)
+        assert.deepStrictEqual(img.symbols.get(f)!.size, 4)
 
-        assert.deepStrictEqual(disassemble(img.fragments[0].content), 
+        assert.deepStrictEqual(disassemble(cutBySymbol(img.fragments[0], img.symbols.get(f)!)),
 `     muls r0, r0
-     bx   lr`
-        )
+     bx   lr`)
+
+        assert.deepStrictEqual(disassemble(cutBySymbol(img.fragments[0], img.symbols.get(g)!)),
+`     push {r4, r5, lr}
+     mov  r4, r1
+     bl   0x20000014
+     mov  r5, r0
+     mov  r0, r4
+     bl   0x20000014
+     adds r0, r5, r0
+     pop  {r4, r5, pc}`)
     })
 })

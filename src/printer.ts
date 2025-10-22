@@ -1,11 +1,11 @@
 import assert from "assert";
 import { BasicBlock, BranchTermination, Conditional, ExitTermination, Operation, StraightTermination, Termination } from "./cfg/basicBlock";
-import { ArgumentOperation, ArithmeticOperation, conditionStr, CopyOperation, LiteralOperation, LoadOperation, RetvalOperation, StoreOperation, TacConditional } from "./generic/operations";
+import { ArgumentOperation, ArithmeticOperation, conditionStr, CopyOperation, InvocationOperation, LiteralOperation, LoadOperation, RetvalOperation, StoreOperation, TacConditional } from "./generic/operations";
 import { reversePostOrderBlocks } from "./cfg/traversal";
 import { Variable } from "./program/expression";
 import { arithmeticStr } from "./generic/arithmetic";
 import { InputOperand, Operand } from "./cfg/value";
-import { AddSubRegImm8, AddSubRegRegImm3, AddSubRegRegReg, ArgumentPseudoIsn, ArithRegReg, CmConditional, cmConditionStr, CompareNegRegReg, CompareRegImm8, CompareRegReg, LiteralIsn, LoadImmOffset, LoadRegOffset, LoadWordRegIncrement, RetvalPseudoIsn, ShiftRegRegImm5, StoreImmOffset, StoreRegOffset, StoreWordRegIncrement, TestRegReg } from "./specific/instructions";
+import { AddSubRegImm8, AddSubRegRegImm3, AddSubRegRegReg, ArithRegReg, ClobberIsn, CmConditional, cmConditionStr, CompareNegRegReg, CompareRegImm8, CompareRegReg, LiteralIsn, LoadImmOffset, LoadRegOffset, LoadWordRegIncrement, ProcedureCallIsn, ShiftRegRegImm5, StoreImmOffset, StoreRegOffset, StoreWordRegIncrement, TestRegReg } from "./specific/instructions";
 import { CoreReg, flagsReg } from "./specific/registers";
 
 function formatHex(v: number, pad: number): string {
@@ -45,7 +45,6 @@ export class ProcedurePrinter {
 
     public value(t: Operand) {
         const cv = (t instanceof InputOperand) ? t.definition?.op?.constValue() : undefined
-
         
         const name = t.value === flagsReg 
             ? "$" 
@@ -54,6 +53,10 @@ export class ProcedurePrinter {
                 : `x${t.value.idx}`
 
         return name + ((cv !== undefined) ? `(${format32(cv)})` : "")
+    }
+
+    public values(ts: Operand[]) {
+        return ts.map(t => this.value(t)).join(", ")
     }
 
     private heading = (bb: BasicBlock) =>
@@ -95,7 +98,7 @@ export class ProcedurePrinter {
             return `${this.value(op.value)} <- [${this.value(op.base)}, ${op.offset}]`;
         }
         else if (op instanceof LoadWordRegIncrement) {
-            return `${op.values.map(v => this.value(v)).join(", ")} <- [${this.value(op.address)} ++ 4]`;
+            return `${this.values(op.values)} <- [${this.value(op.address)} ++ 4]`;
         }
         else if (op instanceof StoreRegOffset) {
             return `[${this.value(op.base)}, ${this.value(op.offset)}] <- ${this.value(op.value)}`
@@ -104,7 +107,7 @@ export class ProcedurePrinter {
             return `[${this.value(op.base)}, ${op.offset}] <- ${this.value(op.value)}`
         }
         else if (op instanceof StoreWordRegIncrement) {
-            return `[${this.value(op.address)} ++ 4] <- ${op.values.map(v => this.value(v)).join(", ")}`
+            return `[${this.value(op.address)} ++ 4] <- ${this.values(op.values)}`
         }
         else if (op instanceof LiteralIsn) {
             return `$, ${this.value(op.result)} := ${format32(op.value)}`;
@@ -112,10 +115,10 @@ export class ProcedurePrinter {
         else if (op instanceof LiteralOperation) {
             return `${((op instanceof LiteralIsn) ? '$, ' : '')}${this.value(op.result)} := ${format32(op.value)}`;
         }
-        else if (op instanceof ArgumentPseudoIsn || op instanceof ArgumentOperation) {
+        else if (op instanceof ArgumentOperation) {
             return `arg${op.idx} ${this.value(op.value)}`;
         }
-        else if (op instanceof RetvalOperation || op instanceof RetvalPseudoIsn) {
+        else if (op instanceof RetvalOperation) {
             return `ret${op.idx} ${this.value(op.value)}`;
         }
         else if (op instanceof LoadOperation) {
@@ -127,9 +130,22 @@ export class ProcedurePrinter {
         else if (op instanceof ArithmeticOperation) {
             return `${this.value(op.result)} := ${this.value(op.left)} ${arithmeticStr(op.op)} ${this.value(op.right)}`;
         }
-        else {
-            assert(op instanceof CopyOperation)
+        else if(op instanceof CopyOperation) {
+            
             return `${this.value(op.destination)} := ${this.value(op.source)}`;
+        }
+        else if (op instanceof InvocationOperation)
+        {    
+            return `[${this.values(op.retvals)}] := call(${this.values(op.args)})`;
+        }
+        else if (op instanceof ProcedureCallIsn)
+        {
+            return `[${this.values(op.outputs)}] := bl(${this.values(op.inputs)})`;
+        }
+        else
+        {
+            assert(op instanceof ClobberIsn)
+            return `clob ${this.value(op.reg)}`;
         }
     }
 

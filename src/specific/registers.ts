@@ -29,11 +29,6 @@ export const lowRegs = [
     reg7,
 ]
 
-export function allLowRegsBut(reg: CoreReg): CoreReg[]
-{
-    return lowRegs.filter(r => r !== reg);
-}
-
 export const args = [
     reg0,
     reg1,

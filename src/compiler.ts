@@ -1,7 +1,7 @@
 import Procedure from "./program/procedure";
 import { reversePostOrderBlocks } from "./cfg/traversal";
 import { generateCfg } from "./generic/generateCfg";
-import { propagateCopies, addTransitBindings, retardDefinitions, removeIdentyOperations } from "./generic/localPasses";
+import { propagateCopies, addTransitBindings, retardDefinitions, optimizeDataProcessing, removeUnused } from "./generic/localPasses";
 import { mergeMia, selectInstructions } from "./specific/machine";
 import { breakCriticalEdges, eliminateDumbJumps, foldConstantConditionals, mergeIdenticalPredecessors, mergeBlocks as mergeTrivialEdges, straightenConditionals } from "./generic/factoring";
 import { transformConditional } from "./specific/conditional";
@@ -15,7 +15,8 @@ import {hoistLiterals} from "./specific/hoistLiterals"
 
 interface CompilerOptions
 {
-    dumpCfg?: boolean
+    dumpCfg?: true | undefined
+    traceRegisterAllocation?: true | undefined
 }
 
 export function compile(ast: Procedure, opts?: CompilerOptions): RelocatableObject
@@ -77,7 +78,14 @@ export function compile(ast: Procedure, opts?: CompilerOptions): RelocatableObje
         /*
         * Eliminate operations that do nothing (like add zero, times one, etc...)
         */
-        [removeIdentyOperations, "remove identy operations"],
+        [optimizeDataProcessing, "optimize data processing"],
+
+        /*
+        * Propagate last-use copies (renaming) that may be present in the
+        * source or are introduced by the substitution steps where deciding
+        * if they are needed would be prohibitively complex without context
+        */
+        [propagateCopies, "propagate copies"],
 
         /*
         * Arrange literals such that pool accesses can be less dumb, by examining the 
@@ -85,7 +93,13 @@ export function compile(ast: Procedure, opts?: CompilerOptions): RelocatableObje
         * out unnecessary contants from the pool globally, where zero cost synthesis is 
         * available (e.g.immediate offset load/store)
         */
-        [hoistLiterals, "host literals"],
+        [hoistLiterals, "hoist literals"],
+
+        /*
+        * Reorder operations in order to try and move definitions of values
+        * closer to their first use thus decreasing register pressure
+        */
+        [retardDefinitions, "retard definitions"],
 
         /*
         * Substitute generic TAC operations for achitecture specific ones
@@ -98,19 +112,12 @@ export function compile(ast: Procedure, opts?: CompilerOptions): RelocatableObje
         * possibly add some auxiliary instructions as well to make it work.
         */
         [transformConditional, "transform conditional"],
-
-        /*
-        * Propagate last-use copies (renaming) that may be present in the
-        * source or are introduced by the substitution steps where deciding
-        * if they are needed would be prohibitively complex without context
+        
+        /* 
+        * Remove instructions left over from previous steps that no longer do
+        * anything useful.
         */
-        [propagateCopies, "propagate copies"],
-
-        /*
-        * Reorder operations in order to try and move definitions of values
-        * closer to their first use thus decreasing register pressure
-        */
-        [retardDefinitions, "retard definitions"],
+        [removeUnused, "remove unused"],
 
         /*
         * Assign actual hardware registers to hold the abstract values used
@@ -118,7 +125,7 @@ export function compile(ast: Procedure, opts?: CompilerOptions): RelocatableObje
         * procedure that may need to take some iterations of altering the 
         * CFG in order to make the interference graph colorable.
         */
-        [allocateRegisters, "allocate registers"],
+        [e => allocateRegisters(e, opts?.traceRegisterAllocation), "allocate registers"],
 
         /*
         * Merge subsequent instances of ldmia/stmia instructions where adequate.
@@ -184,11 +191,6 @@ export function compile(ast: Procedure, opts?: CompilerOptions): RelocatableObje
         ...code
     }
 }
-
-// TODO implement procedure calls
-//      - isn clobber list
-//      - signature abstraction
-//      - invoke isn
 
 // TODO implement spilling
 //      - return verbose coloring failure info to find spill-worthy candidates and live ranges

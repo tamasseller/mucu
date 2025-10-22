@@ -1,25 +1,27 @@
 import assert from "assert";
 import Procedure from "../program/procedure";
 import { BasicBlock, Operation } from "../cfg/basicBlock";
-import { LiteralOperation, ArithmeticOperation, CopyOperation, LoadOperation, StoreOperation, Relation, TacConditional, ArgumentOperation, RetvalOperation } from "./operations";
+import { LiteralOperation, ArithmeticOperation, CopyOperation, LoadOperation, StoreOperation, Relation, TacConditional, ArgumentOperation, RetvalOperation, InvocationOperation } from "./operations";
 import { Binary, Constant, Expression, Load, Ternary, Variable } from "../program/expression";
-import { Assignment, Block, Branch, Jump, JumpKind, Loop, Statement, Store } from "../program/statement";
+import { Assignment, Block, Branch, Call, Jump, JumpKind, Loop, Statement, Store } from "../program/statement";
 import { BinaryOperator, comparisonOperators, logicOperators } from "../program/binaryOperator";
 import { Arithmetic } from "./arithmetic";
 import { Value } from "../cfg/value";
 import { CfgBuilder, CodeBuilder } from "../cfg/cfgBuilder";
+import {retVals} from "../specific/registers"
 
 interface MaterializedValue { cb: CodeBuilder, value: Value }
 type StatementGenerator = (cb: CodeBuilder) => CodeBuilder
 type ValueMaterializer = (cb: CodeBuilder) => MaterializedValue
 
-const arithmetic = (left: ValueMaterializer, right: ValueMaterializer, op: Arithmetic): ValueMaterializer => (cb) => {
-    const l = left(cb);
-    const r = right(l.cb);
+const arithmetic = (left: ValueMaterializer, right: ValueMaterializer, op: Arithmetic): ValueMaterializer => (cb) =>
+{
+    const l = left(cb)
+    const r = right(l.cb)
 
-    const value = new Value();
-    cb.add(new ArithmeticOperation(value, pullThroughIfNeedBe(l, r), r.value, op))
-    return { cb: cb, value }
+    const value = new Value()
+    cb.add(new ArithmeticOperation(value, pullThroughIfNeedBe(l, r.cb), r.value, op))
+    return {cb: cb, value}
 }
 
 function manifestTernaryValue(expr: Expression, temp: Variable, next: CodeBuilder) 
@@ -29,7 +31,7 @@ function manifestTernaryValue(expr: Expression, temp: Variable, next: CodeBuilde
     const v = expressionValue(expr)(cb)
 
     const copy = new Value()
-    v.cb.add(new CopyOperation(copy, v.value)) // TODO XXX
+    v.cb.add(new CopyOperation(copy, v.value))
     v.cb.exportVariableValue(temp, copy)
     v.cb.terminateStraight(next)
 
@@ -89,24 +91,23 @@ function expressionValue(expr: Expression): ValueMaterializer
         }
         else
         {
-            const l = expressionValue(expr.left);
-            const r = expressionValue(expr.right);
+            const l = expressionValue(expr.left)
+            const r = expressionValue(expr.right)
 
-            switch (expr.operator) 
+            switch(expr.operator) 
             {
-                case BinaryOperator.Add: return arithmetic(l, r, Arithmetic.Add);
-                case BinaryOperator.Sub: return arithmetic(l, r, Arithmetic.Sub);
-                case BinaryOperator.Mul: return arithmetic(l, r, Arithmetic.Mul);
-                case BinaryOperator.Shl: return arithmetic(l, r, Arithmetic.Shl);
-                case BinaryOperator.Shr: return arithmetic(l, r, Arithmetic.Shr);
-                case BinaryOperator.BitAnd: return arithmetic(l, r, Arithmetic.BitAnd);
-                case BinaryOperator.BitOr: return arithmetic(l, r, Arithmetic.BitOr);
+                case BinaryOperator.Add: return arithmetic(l, r, Arithmetic.Add)
+                case BinaryOperator.Sub: return arithmetic(l, r, Arithmetic.Sub)
+                case BinaryOperator.Mul: return arithmetic(l, r, Arithmetic.Mul)
+                case BinaryOperator.Shl: return arithmetic(l, r, Arithmetic.Shl)
+                case BinaryOperator.Shr: return arithmetic(l, r, Arithmetic.Shr)
+                case BinaryOperator.BitAnd: return arithmetic(l, r, Arithmetic.BitAnd)
+                case BinaryOperator.BitOr: return arithmetic(l, r, Arithmetic.BitOr)
                 default:
                     assert(expr.operator == BinaryOperator.BitXor)
-                    return arithmetic(l, r, Arithmetic.BitXor);
+                    return arithmetic(l, r, Arithmetic.BitXor)
             }
         }
-
     }
     else 
     {
@@ -115,16 +116,16 @@ function expressionValue(expr: Expression): ValueMaterializer
     }
 }
 
-const pullThroughIfNeedBe = (l: MaterializedValue, r: MaterializedValue) => 
+const pullThroughIfNeedBe = (mv: MaterializedValue, cb: CodeBuilder) => 
 {
-    if (l.cb !== r.cb) 
+    if (mv.cb !== cb) 
     {
         const t = new Variable();
-        l.cb.exportVariableValue(t, l.value);
-        return r.cb.importVariableValue(t);
+        mv.cb.exportVariableValue(t, mv.value);
+        return cb.importVariableValue(t);
     }
 
-    return l.value;
+    return mv.value;
 }
 
 const logic = (left: ValueMaterializer, right: ValueMaterializer, cond: Relation, entry: CodeBuilder, then: CodeBuilder, owise: CodeBuilder) => 
@@ -132,7 +133,7 @@ const logic = (left: ValueMaterializer, right: ValueMaterializer, cond: Relation
     const l = left(entry);
     const r = right(l.cb);
 
-    r.cb.terminateBranch(then, owise, new TacConditional(pullThroughIfNeedBe(l, r), r.value, cond))
+    r.cb.terminateBranch(then, owise, new TacConditional(pullThroughIfNeedBe(l, r.cb), r.value, cond))
 }
 
 function expressionControl({ expr, entry, then, owise }: {
@@ -142,41 +143,46 @@ function expressionControl({ expr, entry, then, owise }: {
     owise: CodeBuilder;
 }): void 
 {
-    if (expr instanceof Binary && logicOperators.includes(expr.operator)) {
-        if(comparisonOperators.includes(expr.operator)) {
-            const l = expressionValue(expr.left);
-            const r = expressionValue(expr.right);
+    if(expr instanceof Binary && logicOperators.includes(expr.operator))
+    {
+        if(comparisonOperators.includes(expr.operator))
+        {
+            const l = expressionValue(expr.left)
+            const r = expressionValue(expr.right)
 
-            switch (expr.operator) {
-                case BinaryOperator.Eq: logic(l, r, Relation.Equal, entry, then, owise); return;
-                case BinaryOperator.Ne: logic(l, r, Relation.Equal, entry, owise, then); return;
-                case BinaryOperator.Lt: logic(l, r, Relation.Less, entry, then, owise); return;
-                case BinaryOperator.Gt: logic(r, l, Relation.Less, entry, then, owise); return;
-                case BinaryOperator.Le: logic(r, l, Relation.Less, entry, owise, then); return;
+            switch(expr.operator)
+            {
+                case BinaryOperator.Eq: logic(l, r, Relation.Equal, entry, then, owise); return
+                case BinaryOperator.Ne: logic(l, r, Relation.Equal, entry, owise, then); return
+                case BinaryOperator.Lt: logic(l, r, Relation.Less, entry, then, owise); return
+                case BinaryOperator.Gt: logic(r, l, Relation.Less, entry, then, owise); return
+                case BinaryOperator.Le: logic(r, l, Relation.Less, entry, owise, then); return
                 default:
                     assert(expr.operator == BinaryOperator.Ge)
-                    logic(l, r, Relation.Less, entry, owise, then);
-                    return;
+                    logic(l, r, Relation.Less, entry, owise, then)
+                    return
             }
         }
         else 
         {
-            const second = new CodeBuilder();
-            expressionControl({ expr: expr.right, entry: second, then, owise })
+            const second = new CodeBuilder()
+            expressionControl({expr: expr.right, entry: second, then, owise})
 
-            if (expr.operator == BinaryOperator.LogAnd) {
-                expressionControl({ expr: expr.left, entry: entry, then: second, owise })
+            if(expr.operator == BinaryOperator.LogAnd)
+            {
+                expressionControl({expr: expr.left, entry: entry, then: second, owise})
             }
-            else {
+            else
+            {
                 assert(expr.operator == BinaryOperator.LogOr)
-                expressionControl({ expr: expr.left, entry: entry, then, owise: second })
+                expressionControl({expr: expr.left, entry: entry, then, owise: second})
             }
 
-            return;
+            return
         }
     }
 
-    expressionControl({ expr: expr.ne(0), entry: entry, then, owise })
+    expressionControl({expr: expr.ne(0), entry: entry, then, owise})
 }
 
 const enum Continuation {
@@ -259,7 +265,7 @@ function statement(stmt: Statement, targets: IndirectTargets): [Continuation, St
                 const v = val(cb)
                 const a = addr(v.cb)
 
-                a.cb.add(new StoreOperation(pullThroughIfNeedBe(v, a), a.value, stmt.width))
+                a.cb.add(new StoreOperation(pullThroughIfNeedBe(v, a.cb), a.value, stmt.width))
                 return a.cb
             }
         ]
@@ -338,15 +344,46 @@ function statement(stmt: Statement, targets: IndirectTargets): [Continuation, St
             }
         ]
     }
+    else if(stmt instanceof Jump)
+    {
+        switch(stmt.kind)
+        {
+        case JumpKind.Break: return [Continuation.Break, cb => cb]
+        case JumpKind.Continue: return [Continuation.Restart, cb => cb]
+        case JumpKind.Return: return [Continuation.Return, cb => cb]
+        }
+    }
     else
     {
-        assert(stmt instanceof Jump);
+        assert(stmt instanceof Call);
 
-        switch (stmt.kind) {
-            case JumpKind.Break: return [Continuation.Break, cb => cb];
-            case JumpKind.Continue: return [Continuation.Restart, cb => cb];
-            case JumpKind.Return: return [Continuation.Return, cb => cb];
-        }
+        return [
+            Continuation.Proceed,
+            cb => 
+            {
+                const mvs: MaterializedValue[] = []
+
+                for(const a of stmt.args)
+                {
+                    const am = expressionValue(a)
+                    const mv = am(cb)
+                    mvs.push(mv)
+                    cb = mv.cb
+                }
+
+                const argsVals = mvs.map(mv => pullThroughIfNeedBe(mv, cb))
+                const retVals: Value[] = Array.from({ length: stmt.retvals.length }, () => new Value);
+
+                cb.add(new InvocationOperation(stmt.procedure, argsVals, retVals))
+
+                for(let i = 0; i < stmt.retvals.length; i++)
+                {
+                    cb.exportVariableValue(stmt.retvals[i], retVals[i])
+                }
+
+                return cb
+            }
+        ]
     }
 }
 

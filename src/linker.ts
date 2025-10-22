@@ -28,11 +28,17 @@ export interface Fragment
     content: Buffer
 }
 
+export interface SymInfo
+{
+    address: number,
+    size: number
+}
+
 export interface Executable
 {
     entry: number
     fragments: Fragment[]
-    symbols: Map<Symbol, number>
+    symbols: Map<Symbol, SymInfo>
 }
 
 export interface FragmentInput
@@ -52,7 +58,7 @@ export function link(entry: Procedure, inputs: FragmentInput[]): Executable
 {
     let currentLocation = 0;
     
-    const addresses = new Map<Symbol, number>()
+    const addresses = new Map<Symbol, SymInfo>()
 
     const fragments: Fragment[] = []
 
@@ -66,7 +72,7 @@ export function link(entry: Procedure, inputs: FragmentInput[]): Executable
             currentLocation = align(currentLocation, o.alignmentBits ?? 0)
             start ??= currentLocation
 
-            addresses.set(o.symbol, currentLocation);
+            addresses.set(o.symbol, {address: currentLocation, size: o.length});
             currentLocation += o.length
         }
 
@@ -87,17 +93,19 @@ export function link(entry: Procedure, inputs: FragmentInput[]): Executable
 
         for(const o of i.objects)
         {
-            const addr = addresses.get(o.symbol)
+            assert(o.content?.length ?? 0 <= o.length)
+
+            const addr = addresses.get(o.symbol).address
             const off = addr - f.address
 
             if(o.content)
             {
-                o.content.copy(f.content, 0, off)
+                o.content.copy(f.content, off)
             }
             
             for(const r of o.relocations)
             {
-                const t = addresses.get(r.target)
+                const t = addresses.get(r.target).address
                 assert(t != undefined, "Undefined reference (TODO: add some info as to where and what somehow)")
                 r.action(f.content.subarray(off + r.offset), addr + r.offset, t)
             }
@@ -105,7 +113,7 @@ export function link(entry: Procedure, inputs: FragmentInput[]): Executable
     }
 
     return {
-        entry: addresses.get(entry),
+        entry: addresses.get(entry).address,
         fragments: fragments,
         symbols: addresses
     }

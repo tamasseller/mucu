@@ -11,12 +11,6 @@ const fromRaw = (...raw: number[]): Buffer => {
     return ret
 }
 
-const fromRaw32 = (...raw: number[]): Buffer => {
-    const ret = Buffer.alloc(raw.length * 4)
-    raw.forEach((v, idx) => ret.writeUInt32LE(v, 4 * idx))
-    return ret
-}
-
 suite("asm", {}, () => {
     test("reg3", () => {
         const uut = new asm.Assembler();
@@ -453,13 +447,13 @@ suite("asm", {}, () => {
         assert.deepEqual(ret.relocations[0].offset, 20)
         assert.deepEqual(ret.relocations[0].target, target)
         assert.deepEqual(ret.relocations[0].action, asm.thumbBlReloc)
-        assert.deepEqual(ret.content, fromRaw32(
-            0xf3ef_8010, // mrs	r0, PRIMASK
-            0xf38c_8814, // msr	CONTROL, ip
-            0xf3bf_8f4f, // dsb	sy
-            0xf3bf_8f6f, // isb	sy
-            0xf3bf_8f5f, // dmb	sy
-            0xf000_f800, // bl	14 <x>
+        assert.deepEqual(ret.content, fromRaw(
+            0xf3ef, 0x8010, // mrs	r0, PRIMASK
+            0xf38c, 0x8814, // msr	CONTROL, ip
+            0xf3bf, 0x8f4f, // dsb	sy
+            0xf3bf, 0x8f6f, // isb	sy
+            0xf3bf, 0x8f5f, // dmb	sy
+            0xf7ff, 0xfffe, // bl
         ));
     })
 })

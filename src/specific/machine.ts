@@ -1,12 +1,13 @@
 import assert from "assert";
-import { CopyOperation, LiteralOperation, ArithmeticOperation, LoadOperation, StoreOperation, ArgumentOperation, RetvalOperation } from "../generic/operations";
+import { CopyOperation, LiteralOperation, ArithmeticOperation, LoadOperation, StoreOperation, ArgumentOperation, RetvalOperation, InvocationOperation } from "../generic/operations";
 import { OutputOperand, InputOperand } from "../cfg/value";
 import { BasicBlock, Operation } from "../cfg/basicBlock";
-import { ArgumentPseudoIsn, CopyIsn, LiteralIsn, LoadWordRegIncrement, RetvalPseudoIsn, StoreWordRegIncrement } from "./instructions";
+import { ClobberIsn, CopyIsn, LiteralIsn, LoadWordRegIncrement, ProcedureCallIsn, StoreWordRegIncrement } from "./instructions";
 import { mapLoadStoreOp } from "./loadStore";
 import { mapArithmeticOp } from "./arithmetic";
 import { CfgRewriter, CodeBuilder } from "../cfg/cfgBuilder";
-import { CoreReg } from "./registers";
+import { args, CoreReg, retVals } from "./registers";
+import {Variable} from "../program/expression"
 
 export class OpInfo
 {
@@ -39,39 +40,72 @@ export function selectInstructions(entry: BasicBlock): BasicBlock
     {
         const ignored = new Set<Operation>()
 
-        const ret = CodeBuilder.recreate(bb, op => 
+        const cb = new CodeBuilder()
+
+        cb.recreateImports(bb)
+        for(const op of bb.ops) 
         {
-            if(ignored.has(op))
-            {
-                return []
-            }
+            if(ignored.has(op)) continue
+
             if(op instanceof ArgumentOperation)
             {
-                return [new ArgumentPseudoIsn(op.idx, op.value.value)]
+                assert(op.idx < args.length)
+
+                assert([...bb.predecessors].length === 0)
+                cb.setImport(new Variable(), args[op.idx])
+                
+                cb.add(new CopyIsn(op.value.value, args[op.idx]))
             }
             else if(op instanceof RetvalOperation)
             {
-                return [new RetvalPseudoIsn(op.idx, op.value.value)]
+                assert(op.idx < retVals.length)
+
+                assert([...bb.successors].length === 0)
+
+                cb.add(new CopyIsn(retVals[op.idx], op.value.value))
+                cb.exportVariableValue(new Variable(), retVals[op.idx])
+            }
+            else if(op instanceof InvocationOperation)
+            {
+                for(let idx = 0; idx < op.args.length; idx++)
+                {
+                    cb.add(new CopyIsn(args[idx], op.args[idx].value))
+                }
+
+                for(let idx = op.args.length; idx < args.length; idx++)
+                {
+                    cb.add(new ClobberIsn(args[idx]))
+                }
+
+                cb.add(new ProcedureCallIsn(op.callee))
+
+                for(let idx = 0; idx < op.retvals.length; idx++)
+                {
+                    cb.add(new CopyIsn(op.retvals[idx].value, retVals[idx]))                    
+                }
             }
             else if(op instanceof LiteralOperation)
             {
-                return [new LiteralIsn(op.result.value, op.value)]
+                cb.add(new LiteralIsn(op.result.value, op.value))
             }
             else if(op instanceof CopyOperation)
             {
-                return [new CopyIsn(op.destination.value, op.source.value)]
+                cb.add(new CopyIsn(op.destination.value, op.source.value))
             }
             else if(op instanceof ArithmeticOperation)
             {
-                return mapArithmeticOp(op)
+                mapArithmeticOp(op).forEach(x => cb.add(x))
             }
             else
             {
                 assert(op instanceof LoadOperation || op instanceof StoreOperation)
-                return mapLoadStoreOp(op, ignored)
+                mapLoadStoreOp(op, ignored).forEach(x => cb.add(x))
             }
-        })
-        return ret
+        }
+
+        cb.recreateExports(bb)
+
+        return cb
     })
 }
 

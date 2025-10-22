@@ -78,12 +78,14 @@ export class CodeBuilder
         return 0 < this.ops.length
     }
 
+    getDefiningOperand(value: Value): DefiningOperand | undefined
+    {
+        return this.available.get(value);
+    }
+
     getDefinition(value: Value): Operation | undefined
     {
-        const oop = this.available.get(value);
-        // assert(oop !== undefined)
-
-        return oop?.op;
+        return this.getDefiningOperand(value)?.op;
     }
 
     importVariableValue(v: Variable): Value 

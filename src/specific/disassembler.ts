@@ -1,4 +1,5 @@
-import { BranchOp, HiRegOp, Imm5Op, Imm7Op, Imm8Op, NoArgOp, Reg2Op, Reg3Op } from "./armv6";
+import {Relocation} from "../linker"
+import { b, BranchOp, fmtBl, HiRegOp, Imm5Op, Imm7Op, Imm8Op, NoArgOp, Reg2Op, Reg3Op, SYSm, WideOps } from "./armv6";
 
 const enum Masks
 {
@@ -9,13 +10,15 @@ const enum Masks
     reg3   = 0b1111111_000_000_000,
     imm8   = 0b11111_000_00000000,
     imm5   = 0b11111_00000_000_000,
-    jump   = 0b11111_00000000000,
+    b      = 0b11111_00000000000,
     branch = 0b1111_1111_00000000,
     lsMia  = 0b1111_0_000_00000000,
-    pshPop = 0b1111_0_11_0_00000000
+    pshPop = 0b1111_0_11_0_00000000,
+    msr    = 0b11111_1111110_0000_1_101_0000_00000000,
+    mrs    = 0b11111_1111110_0000_1_101_0000_00000000,
+    bl     = 0b11110_0_0000000000_11_0_1_0_00000000000
 }
 
-const jumpOp    = 0b11100_00000000000
 const lsMiaOp   = 0b1100_0_000_00000000
 const pushPopOp = 0b1011_0_10_0_00000000
 
@@ -29,10 +32,30 @@ const r = (idx: number) => {
     }
 }
 
+const sysr = (sysm: number) =>
+{
+    switch(sysm as SYSm) 
+    {
+        case SYSm.APSR:    return "APSR"
+        case SYSm.IAPSR:   return "IAPSR"
+        case SYSm.EAPSR:   return "EAPSR"
+        case SYSm.XPSR:    return "XPSR"
+        case SYSm.IPSR:    return "IPSR"
+        case SYSm.EPSR:    return "EPSR"
+        case SYSm.IEPSR:   return "IEPSR"
+        case SYSm.MSP:     return "MSP"
+        case SYSm.PSP:     return "PSP"
+        case SYSm.PRIMASK: return "PRIMASK"
+        case SYSm.CONTROL: return "CONTROL"
+        default: return `sys${sysm}?`
+    }
+}
+
 interface Isn
 {
     readonly access?: number
     readonly branch?: number
+    readonly isWide?: boolean
     print(indices: Iterable<number>): Iterable<string>
 }
 
@@ -43,7 +66,10 @@ const lutNoArg = new Map<number, () => Isn>([
     [NoArgOp.YIELD, () => ({print: () => ["yield"]})],
     [NoArgOp.WFE,   () => ({print: () => ["wfe"]})],
     [NoArgOp.WFI,   () => ({print: () => ["wfi"]})],
-    [NoArgOp.SEV,   () => ({print: () => ["sev"]})]
+    [NoArgOp.SEV,   () => ({print: () => ["sev"]})],
+    [WideOps.DSB,   () => ({print: () => ["dsb"]})],
+    [WideOps.DMB,   () => ({print: () => ["dmb"]})],
+    [WideOps.ISB,   () => ({print: () => ["isb"]})],
 ])
 
 const lutReg2 = new Map<number, (dn: number, m: number) => Isn>([
@@ -148,6 +174,12 @@ const lutBranchSvc = new Map<number, (imm8: number) => Isn>([
     [BranchOp.BKPT, (imm8) => ({print: () => ["bkpt", `#${imm8}`]})],
 ])
 
+const lutWideNoArg = new Map<number, () => Isn>([
+    [WideOps.DSB,   () => ({isWide: true, print: () => ["dsb"]})],
+    [WideOps.DMB,   () => ({isWide: true, print: () => ["dmb"]})],
+    [WideOps.ISB,   () => ({isWide: true, print: () => ["isb"]})],
+])
+
 function* bm2idxs(bitmap: number)
 {
     for(let i = 0; i < 8; i++)
@@ -174,6 +206,28 @@ const miaOp = (loadNstore: boolean, n: number, regFlags: number) => ({
     ]
 })
 
+const msrOp = (rn: number, sysm: number) => ({
+    isWide: true, 
+    print: () => ["msr", `${sysr(sysm)}`, `${r(rn)}`]
+})
+
+const mrsOp = (dn: number, sysm: number) => ({
+    isWide: true, 
+    print: () => ["mrs", `${r(dn)}`, `${sysr(sysm)}`]
+})
+
+const blOp = (S: number, J1: number, J2: number, imm10: number, imm11: number) => {
+    const I1 = J1 ^ S ^ 1
+    const I2 = J2 ^ S ^ 1
+    const u24 = (S << 24) | (I1 << 23) | (I2 << 22) | (imm10 << 12) | (imm11 << 1)
+    const i24 = (u24 << 8) >> 8
+
+    return ({
+        isWide: true, 
+        print: ([addr]) => ["bl", `0x${("0".repeat(8) + (addr + 4 + i24).toString(16)).slice(-8)}`],
+    })
+}
+
 const bOp = (offset: number) => ({
     print: ([l]) => ["b", `l${l}`],
     branch: (offset << 21) >> 21
@@ -181,6 +235,17 @@ const bOp = (offset: number) => ({
 
 function parseInstruction(isn: number): Isn | undefined
 {
+    if(((isn & Masks.msr) >>> 0) === ((WideOps.MSR & Masks.msr) >>> 0)) return msrOp((isn >> 16) & 0xf, isn & 0xff)
+    if(((isn & Masks.mrs) >>> 0) === ((WideOps.MRS & Masks.mrs) >>> 0)) return mrsOp((isn >> 8) & 0xf, isn & 0xff)
+    if(((isn & Masks.bl) >>> 0) === ((WideOps.BL & Masks.bl) >>> 0)) return blOp((isn >>> 26) & 1, (isn >>> 13) & 1, (isn >>> 11) & 1, (isn >>> 16) & 0x3ff, (isn >>> 0) & 0x7ff)
+
+    const wideNoArg = lutWideNoArg.get(isn)
+    if(wideNoArg) return wideNoArg()
+
+    if((isn & Masks.pshPop) === pushPopOp) return ppOp((isn & (1 << 11)) !== 0, (isn & (1 << 8)) !== 0, isn & 255)
+    if((isn & Masks.lsMia) === lsMiaOp) return miaOp((isn & (1 << 11)) !== 0, ((isn >>> 8) & 7), isn & 255)
+    if((isn & Masks.b) === b) return bOp(isn & 0x7ff)
+
     return lutNoArg.get(isn & Masks.noArg)?.()
         ?? lutReg2.get(isn & Masks.reg2)?.(isn & 7, (isn >>> 3) & 7)
         ?? lutImm7.get(isn & Masks.imm7)?.(isn & 127)
@@ -189,11 +254,6 @@ function parseInstruction(isn: number): Isn | undefined
         ?? lutImm8.get(isn & Masks.imm8)?.((isn >>> 8) & 7, isn & 255)
         ?? lutImm5.get(isn & Masks.imm5)?.(isn & 7, (isn >>> 3) & 7, (isn >>> 6) & 31)
         ?? lutBranchSvc.get(isn & Masks.branch)?.(isn & 0xff)
-        ?? ((isn & Masks.pshPop) === pushPopOp
-            ? ppOp((isn & (1 << 11)) !== 0, (isn & (1 << 8)) !== 0, isn & 255)
-            : ((isn & Masks.lsMia) === lsMiaOp)
-                ? miaOp((isn & (1 << 11)) !== 0, ((isn >>> 8) & 7), isn & 255)
-                : bOp(isn & 0x7ff))
 }
 
 function pcRelIndex(pcIdx: number, off: number)
@@ -202,18 +262,40 @@ function pcRelIndex(pcIdx: number, off: number)
     return ((off << 1) + wordAlignedPcInOff16) << 1
 }
 
+function readIsn(bin: Buffer, offset: number): {rawIsn: number, width: number}
+{
+    const halfWord = bin.readUint16LE(offset)
+
+    if(halfWord >>> 11 === 0b11110)
+    {
+        return {
+            rawIsn: ((halfWord << 16) | bin.readUint16LE(offset + 2)) >>> 0,
+            width: 4
+        }
+    }
+        
+    return {
+        rawIsn: halfWord,
+        width: 2
+    }
+}
+
 function* traverseInstructions(bin: Buffer): Generator<Isn, void, unknown>
 {
     let poolStart = undefined;
-    for(let off = 0; off < bin.byteLength && (poolStart === undefined || off < poolStart); off += 2)
+    for(let off = 0; off < bin.byteLength && (poolStart === undefined || off < poolStart); )
     {
-        const isn = parseInstruction(bin.readUint16LE(off))
+        const readed = readIsn(bin, off)
+
+        const isn = parseInstruction(readed.rawIsn)
 
         if(isn.access !== undefined) {
             poolStart = Math.min(pcRelIndex(off >> 1, isn.access), ...(poolStart !== undefined ? [poolStart] : []))
         }
 
         yield isn
+
+        off += readed.width
     }
 }
 
@@ -227,12 +309,12 @@ function collectLabels(isns: Iterable<Isn>)
     const branchUses = new Set<number>()
     const literalUses = new Set<number>()
 
-    let idx = 0;
+    let hwOff = 0;
     for(const isn of isns)
     {
-        if(isn.branch !== undefined) branchUses.add(branchTargetIndex(idx, isn.branch))
-        else if(isn.access !== undefined) literalUses.add(pcRelIndex(idx, isn.access))
-        idx++;
+        if(isn.branch !== undefined) branchUses.add(branchTargetIndex(hwOff, isn.branch))
+        else if(isn.access !== undefined) literalUses.add(pcRelIndex(hwOff, isn.access))
+        hwOff += isn.isWide ? 2 : 1;
     }
 
     return [
@@ -241,22 +323,30 @@ function collectLabels(isns: Iterable<Isn>)
     ]
 }
                 
-export function disassemble(bin: Buffer): string
+export function disassemble(input: {content?: Buffer, relocations?: Relocation[], address?: number}): string
 {
+    const address = input.address ?? 0
+    const rel = new Map<number, Relocation>(input.relocations?.map(r => [r.offset, r]) ?? [])
+    const bin = input.content
+    if(bin === undefined) return "¯\_(ツ)_/¯"
+
     const isns = [...traverseInstructions(bin)]
     const [branchLabels, literalLabels] = collectLabels(isns);
 
-    const isnParts = isns.map((isn, idx) => 
+    const isnParts: string[][] = []
+    let hwOff = 0
+
+    for(const isn of isns) 
     {
         const i = []
         
         if(isn.branch !== undefined)
         {
-            i.push(branchLabels.get(isn.branch + 2 + idx))
+            i.push(branchLabels.get(isn.branch + 2 + hwOff))
         }
         else if(isn.access !== undefined)
         {
-            const addr = pcRelIndex(idx, isn.access)
+            const addr = pcRelIndex(hwOff, isn.access)
             i.push(literalLabels.get(addr))
 
             if(addr + 4 <= bin.byteLength)
@@ -269,27 +359,37 @@ export function disassemble(bin: Buffer): string
             }
         }
 
-        const label = branchLabels.get(idx)
+        i.push(address + 2 * hwOff)
         const [first, ...rest] = isn.print(i)
-        return [
-            ((label === undefined ? '' : `l${label}:`) + " ".repeat(5)).substring(0, 5)
-            + first, 
-            rest.join(", ")
-        ]
-    })
+
+        const strRel = rel.has(hwOff << 1) ? " # relocation" : ""
+
+        const label = branchLabels.get(hwOff)
+        const strLabel = (label === undefined ? '' : `l${label}:`)
+
+        isnParts.push([
+            (strLabel + " ".repeat(5)).substring(0, 5) + first, 
+            rest.join(", ") + strRel,
+        ])
+
+        hwOff += isn.isWide ? 2 : 1
+    }
 
     const width = Math.max(...isnParts.map(x => x[0].length))
     const padding = " ".repeat(width)
 
+    const codeLen = isns.reduce((a, isn) => a + ((isn.isWide ?? false) ? 4 : 2), 0)
+    const poolStart = (codeLen + 3) & ~3;
+
     return [
-        ...isnParts.map((fr, idx) => `${(fr[0] + padding).substring(0, width)} ${fr[1]}`),
-    ...((function*(){
-        for(let off = (isns.length * 2 + 3) & ~3; off < bin.byteLength; off += 4)
-        {
-            const label = literalLabels.get(off)
-            const l = ((label === undefined ? '' : `L${label}:`) + " ".repeat(5)).substring(0, 5)
-            yield `${l}${hex(bin.readUint32LE(off))}`
-        }
-    })())
+        ...isnParts.map((fr) => `${(fr[0] + padding).substring(0, width)} ${fr[1]}`),
+        ...((function*(){
+            for(let off = poolStart; off < bin.byteLength; off += 4)
+            {
+                const label = literalLabels.get(off)
+                const l = ((label === undefined ? '' : `L${label}:`) + " ".repeat(5)).substring(0, 5)
+                yield `${l}${hex(bin.readUint32LE(off))}`
+            }
+        })())
     ].join("\n")
 }

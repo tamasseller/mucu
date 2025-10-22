@@ -1,82 +1,81 @@
 import assert from "assert";
 import { ArithmeticOperation, CopyOperation, LiteralOperation } from "../generic/operations";
 import { DefiningOperand, InOutOperand, InputOperand, OutputOperand, Value } from "../cfg/value";
-import { AnyReg } from "./armv6";
 import { Assembler, Imm3, Imm5, Imm8, Label, Uoff05, Uoff15, Uoff25 } from "./assembler";
 import { Arithmetic, arithmeticEval } from "../generic/arithmetic";
 import { LoadStoreWidth } from "../program/common";
 import { Conditional, Operation } from "../cfg/basicBlock";
-import { allLowRegsBut, args, CoreReg, flagsReg, retVals } from "./registers";
+import { args, CoreReg, flagsReg, retVals } from "./registers";
+import Procedure from "../program/procedure"
 
-export interface CmIsn extends Operation {
+export interface CmIsn extends Operation 
+{
     emit(asm: Assembler);
 }
 
-export class ArgumentPseudoIsn extends Operation implements CmIsn
+const flagsOp = () => new OutputOperand(this, flagsReg, true)
+
+export class ClobberIsn extends Operation implements CmIsn
 {
-    readonly value: OutputOperand
+    readonly reg: OutputOperand
+    
     constructor(
-        readonly idx: number,
-        value: Value,
+        readonly cr: CoreReg,
     ) {
-        super();
-        assert(idx < args.length)
-        this.value = new OutputOperand(this, value, allLowRegsBut(args[idx]))
+        super()
+        this.reg = new OutputOperand(this, cr)
     }
 
-    copy(subs?: Map<Value, Value>): Operation {
-        return new ArgumentPseudoIsn(this.idx, subs?.get(this.value.value) ?? this.value.value)
-    }
-
-    override get outputs(): OutputOperand[] {
-        return [this.value]
-    }
-
-    get hasSideEffect(): boolean {
-        return true
-    }
+    get outputs(): DefiningOperand[] { return [this.reg] }
 
     emit(asm: Assembler) {}
 
-    isIdentical(other: Operation): boolean 
+    copy(subs?: Map<Value, Value>): Operation
     {
-        return other instanceof ArgumentPseudoIsn 
-            && other.idx === this.idx
-            && other.value.value === this.value.value
+        return new ClobberIsn(this.reg.value)
+    }
+
+    isIdentical(other: Operation): boolean
+    {
+        return other instanceof ClobberIsn && other.reg.value === this.reg.value
     }
 }
 
-export class RetvalPseudoIsn extends Operation implements CmIsn
+export class ProcedureCallIsn extends Operation implements CmIsn
 {
-    readonly value: InputOperand
+    readonly args: InputOperand[]
+    readonly retvals: OutputOperand[]
+
     constructor(
-        readonly idx: number,
-        value: Value,
+        readonly callee: Procedure,
     ) {
         super();
-        assert(idx < args.length)
-        this.value = new InputOperand(this, value, allLowRegsBut(retVals[idx]))
+
+        this.args = args.map(a => new InputOperand(this, a))
+        assert(callee.args.length < args.length)
+
+        this.retvals = retVals.map(r => new OutputOperand(this, r))
+        assert(callee.retvals.length < retVals.length)
     }
 
-    copy(subs?: Map<Value, Value>): Operation {
-        return new RetvalPseudoIsn(this.idx, subs?.get(this.value.value) ?? this.value.value)
-    }
+    override get hasSideEffect(): boolean { return true }
 
-    override get inputs(): InputOperand[] {
-        return [this.value]
-    }
+    get inputs() { return this.args }
+    get outputs() { return this.retvals }
 
-    get hasSideEffect(): boolean {
-        return true
-    }
-
-    emit(asm: Assembler) {}
-
-    isIdentical(other: Operation): boolean 
+    copy(subs?: Map<Value, Value>): Operation
     {
-        return other instanceof RetvalPseudoIsn 
-            && other.idx === this.idx
-            && other.value.value === this.value.value
+        return new ProcedureCallIsn(this.callee)
+    }
+
+    isIdentical(other: Operation): boolean
+    {
+        return other instanceof ProcedureCallIsn && other.callee === this.callee
+    }
+
+    emit(asm: Assembler) 
+    {
+        asm.bl(this.callee)
     }
 }
 
@@ -101,7 +100,7 @@ export class CopyIsn extends CopyOperation implements CmIsn
 // x = c
 export class LiteralIsn extends LiteralOperation implements CmIsn 
 {
-    readonly flags = new OutputOperand(this, flagsReg)
+    readonly flags = flagsOp()
 
     copy(subs?: Map<Value, Value>): Operation {
         return new LiteralIsn(
@@ -181,7 +180,7 @@ export class LiteralIsn extends LiteralOperation implements CmIsn
 // x = y + z
 export class AddSubRegRegReg extends ArithmeticOperation implements CmIsn 
 {
-    readonly flags = new OutputOperand(this, flagsReg)
+    readonly flags = flagsOp()
 
     constructor(
         result: Value,
@@ -227,7 +226,7 @@ export class AddSubRegRegReg extends ArithmeticOperation implements CmIsn
 // x = y + c(<8)
 export class AddSubRegRegImm3 extends Operation implements CmIsn 
 {
-    readonly flags = new OutputOperand(this, flagsReg)
+    readonly flags = flagsOp()
 
     readonly result: OutputOperand
     readonly left: InputOperand
@@ -297,7 +296,7 @@ export class AddSubRegRegImm3 extends Operation implements CmIsn
 // x = y << c(<32)
 export class ShiftRegRegImm5 extends Operation implements CmIsn  
 {
-    readonly flags = new OutputOperand(this, flagsReg)
+    readonly flags = flagsOp()
 
     readonly result: OutputOperand
     readonly left: InputOperand
@@ -367,7 +366,7 @@ export class ShiftRegRegImm5 extends Operation implements CmIsn
 // x *= y
 export class ArithRegReg extends Operation implements CmIsn  
 {
-    readonly flags = new OutputOperand(this, flagsReg)
+    readonly flags = flagsOp()
 
     readonly leftResult: InOutOperand
     readonly right: InputOperand
@@ -449,7 +448,7 @@ export class ArithRegReg extends Operation implements CmIsn
 // $ = x - y
 export class CompareRegReg extends Operation implements CmIsn 
 {
-    readonly flags = new OutputOperand(this, flagsReg)
+    readonly flags = flagsOp()
 
     readonly left: InputOperand
     readonly right: InputOperand
@@ -506,7 +505,7 @@ export class CompareRegReg extends Operation implements CmIsn
 // $ = x - y
 export class CompareNegRegReg extends Operation implements CmIsn 
 {
-    readonly flags = new OutputOperand(this, flagsReg)
+    readonly flags = flagsOp()
 
     readonly left: InputOperand
     readonly right: InputOperand
@@ -563,7 +562,7 @@ export class CompareNegRegReg extends Operation implements CmIsn
 // $ = x & y
 export class TestRegReg extends Operation implements CmIsn 
 {
-    readonly flags = new OutputOperand(this, flagsReg)
+    readonly flags = flagsOp()
 
     readonly left: InputOperand
     readonly right: InputOperand
@@ -621,7 +620,7 @@ export class TestRegReg extends Operation implements CmIsn
 // x += c(<256)
 export class AddSubRegImm8 extends Operation implements CmIsn  
 {
-    readonly flags = new OutputOperand(this, flagsReg)
+    readonly flags = flagsOp()
 
     readonly leftResult: InOutOperand
 
@@ -684,7 +683,7 @@ export class AddSubRegImm8 extends Operation implements CmIsn
 // $ = x - c(<256)
 export class CompareRegImm8 extends Operation implements CmIsn 
 {
-    readonly flags = new OutputOperand(this, flagsReg)
+    readonly flags = flagsOp()
     readonly left: InputOperand
 
     constructor(
@@ -1163,7 +1162,7 @@ export class CmConditional implements Conditional
         return new CmConditional(this.condition)
     }
 
-    readonly flags = new InputOperand(undefined, flagsReg)
+    readonly flags = new InputOperand(undefined, flagsReg, true)
     get inputs(): InputOperand[] {
         return [this.flags]
     }

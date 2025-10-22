@@ -15,7 +15,7 @@ export class Operand
     constructor(
         readonly op: Operation | undefined, 
         public value: Value,
-        readonly additionalInterference?: Value[]
+        readonly noAlloc = false
     ) {}
 }
 
